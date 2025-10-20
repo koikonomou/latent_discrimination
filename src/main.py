@@ -34,6 +34,9 @@ def parse_args():
     # model
     p.add_argument("--vae", type=str, default="sd15", choices=["sd15","taesd"])
     p.add_argument("--sd15-path", type=str, default="./_sd15_vae")
+    p.add_argument("--embedder", type=str, default="mlp", choices=["mlp","conv"],
+                   help="mlp = SDVAE_Embedder (flatten+MLP), conv = LatentConvEmbedder (ResNet-style)")
+
     p.add_argument("--taesd-path", type=str, default="./_taesd")
     p.add_argument("--proj-dim", type=int, default=128)
     p.add_argument("--epochs", type=int, default=10)
@@ -85,11 +88,15 @@ def main():
     # model
     LATENT_HW = args.image_size // 8
     base_dim = 4 * LATENT_HW * LATENT_HW
-    embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
-    # embedder = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
-    head = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.3, scale=28.0).to(device)
+    eff_proj_dim = args.proj_dim if args.embedder == "mlp" else max(args.proj_dim, 256)
+
+    if args.embedder == "conv":
+        embedder = LatentConvEmbedder(proj_dim=eff_proj_dim).to(device)
+    else:
+        embedder = SDVAE_Embedder(eff_proj_dim, base_dim).to(device)
+
+    head = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.4, scale=30.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs, eta_min=args.lr*0.05)
 
     # optional preload
     if args.load_ckpt:
@@ -194,8 +201,10 @@ def main():
                 subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
                 np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
 
-                # fresh model
-                model = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
+                if args.embedder == "conv":
+                    model = LatentConvEmbedder(proj_dim=eff_proj_dim).to(device)
+                else:
+                    model = SDVAE_Embedder(eff_proj_dim, base_dim).to(device)
                 head2 = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.4, scale=28.0).to(device)
                 eff_lr = args.lr if (len(keep_idx)/len(train_ds))>0.3 else args.lr*0.7
                 opt2 = T.optim.AdamW(list(model.parameters())+list(head2.parameters()), lr=eff_lr, weight_decay=args.weight_decay)
