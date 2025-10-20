@@ -27,9 +27,22 @@ You must accept the license for `runwayml/stable-diffusion-v1-5` on the model pa
 
 ## 3) Run training
 
+For MNIST baseline run:
 ```bash
-python train_haseparator_mnist_sdvae.py   --epochs 10   --batch-size 256   --image-size 64   --num-workers 4   --device auto
+python -m src.main --dataset mnist --vae sd15 --embedder mlp --proj-dim 128 --epochs 10  --batch-size 64 --image-size 64 --num-workers 4 --device auto --seed 42
 ```
+
+For CIFAR10 run 
+```bash
+python -m src.main --dataset cifar10 --vae sd15 --embedder conv --proj-dim 256 --epochs 150 --batch-size 128 --image-size 64 --num-workers 4 --device auto --seed 42
+```
+
+If you want to test the distillation (sweep at 10-90%) run:
+```bash
+
+python -m src.main --dataset cifar10 --vae sd15 --embedder conv --proj-dim 256 --epochs 1 --skip-train --load-ckpt runs/<...>/ckpts/best.ckpt --run-distill --dd-method kcenter_cosine --epochs-per-dd 10 --dd-epoch-mode scaled --batch-size 128 --image-size 64 --num-workers 4 --device auto --seed 42
+```
+
 
 Key outputs:
 - `checkpoints/best.ckpt` – best model weights (embedder + head)
