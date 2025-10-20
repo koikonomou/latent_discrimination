@@ -36,24 +36,42 @@ class SDVAE_Embedder(nn.Module):
     def forward(self, z_map):
         return self.proj(z_map.reshape(z_map.size(0), -1))
 
-class LatentConvEmbedder(nn.Module):
-    """
-    Input: z [B, 4, H/8, W/8]  (e.g., 4x8x8 for 64x64)
-    """
-    def __init__(self, proj_dim=256, in_ch=4):
+class ResidBlock(nn.Module):
+    def __init__(self, ch):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(in_ch, 64, 3, padding=1), nn.GroupNorm(8, 64), nn.SiLU(),
-            nn.Conv2d(64, 128, 3, padding=1, stride=2), nn.GroupNorm(16, 128), nn.SiLU(),  # 8x8 -> 4x4
-            nn.Conv2d(128, 256, 3, padding=1), nn.GroupNorm(32, 256), nn.SiLU(),
-            nn.AdaptiveAvgPool2d(1),  # -> [B,256,1,1]
+            nn.Conv2d(ch, ch, 3, padding=1, bias=False),
+            nn.GroupNorm(8, ch),
+            nn.SiLU(),
+            nn.Conv2d(ch, ch, 3, padding=1, bias=False),
+            nn.GroupNorm(8, ch),
         )
-        self.proj = nn.Linear(256, proj_dim)
+        self.act = nn.SiLU()
+    def forward(self, x):
+        return self.act(x + self.net(x))
 
+class LatentConvEmbedder(nn.Module):
+    """Input: z in R^{B,4,8,8}; Output: L2-unconstrained feature in R^{B,proj_dim}"""
+    def __init__(self, proj_dim=256):
+        super().__init__()
+        ch = 128
+        self.stem = nn.Sequential(
+            nn.Conv2d(4, ch, 3, padding=1, bias=False),
+            nn.GroupNorm(8, ch),
+            nn.SiLU(),
+        )
+        self.block1 = ResidBlock(ch)
+        self.block2 = ResidBlock(ch)
+        self.block3 = ResidBlock(ch)
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),   # B×C×1×1
+            nn.Flatten(),              # B×C
+            nn.Linear(ch, proj_dim),
+        )
     def forward(self, z):
-        h = self.net(z).flatten(1)   # [B,256]
-        return self.proj(h)
-
+        h = self.stem(z)
+        h = self.block1(h); h = self.block2(h); h = self.block3(h)
+        return self.head(h)
 
 def load_vae(backend: str, repo_path: str, device, dtype):
     if backend == "sd15":
