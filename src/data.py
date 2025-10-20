@@ -37,10 +37,11 @@ def get_loaders(dataset: str, image_size: int, batch_size: int, num_workers: int
             transforms.Resize((image_size, image_size)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(image_size, padding=4),
-            transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
+            transforms.RandAugment(num_ops=2, magnitude=9),
+            # transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
             transforms.ToTensor(),
             transforms.Normalize([0.5,0.5,0.5],[0.5,0.5,0.5]),
-            transforms.RandomErasing(p=0.25, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=0.0),
+            transforms.RandomErasing(p=0.1, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=0.0),
         ])
 
         tf_test = transforms.Compose([
@@ -54,10 +55,8 @@ def get_loaders(dataset: str, image_size: int, batch_size: int, num_workers: int
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                              num_workers=num_workers, pin_memory=pin)
-    test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
-                              num_workers=num_workers, pin_memory=pin)
-    train_loader_noshuf = DataLoader(train_ds, batch_size=256, shuffle=False,
-                                     num_workers=0, pin_memory=pin)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin)
+    test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
+    train_loader_noshuf = DataLoader(train_ds, batch_size=256, shuffle=False,num_workers=0, pin_memory=pin)
+    
     return train_ds, test_ds, train_loader, test_loader, train_loader_noshuf
