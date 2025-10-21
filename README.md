@@ -17,13 +17,13 @@ pip install -r requirements.txt
 
 ## 2) Hugging Face auth (needed to pull SD v1.5 VAE)
 
+The Stable VAE and Tiny one that we use in this repo doen't require a login howerever for different VAE login is required.
+
 ```bash
 huggingface-cli login
 # or set env var just for the run:
 # export HUGGINGFACE_HUB_TOKEN=hf_XXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
-
-You must accept the license for `runwayml/stable-diffusion-v1-5` on the model page once on your HF account.
 
 ## 3) Run training
 
@@ -40,19 +40,13 @@ python -m src.main --dataset cifar10 --vae sd15 --embedder conv --proj-dim 256 -
 If you want to test the distillation (sweep at 10-90%) run:
 ```bash
 
-python -m src.main --dataset cifar10 --vae sd15 --embedder conv --proj-dim 256 --epochs 1 --skip-train --load-ckpt runs/<...>/ckpts/best.ckpt --run-distill --dd-method kcenter_cosine --epochs-per-dd 10 --dd-epoch-mode scaled --batch-size 128 --image-size 64 --num-workers 4 --device auto --seed 42
+python -m src.main --dataset mnist --vae sd15 --embedder mlp --proj-dim 128 --epochs 1 --skip-train --load-ckpt runs/<...>/ckpts/best.ckpt --run-distill --dd-method kcenter_cosine --epochs-per-dd 10 --dd-epoch-mode scaled --batch-size 128 --image-size 64 --num-workers 4 --device auto --seed 42
 ```
 
 
 Key outputs:
-- `checkpoints/best.ckpt` – best model weights (embedder + head)
-- `artifacts/tsne_train.png` – t-SNE of train embeddings
-- `artifacts/tsne_test.png` – t-SNE of test embeddings
-- `artifacts/train_log.csv` – per-epoch metrics
+- `runs/ckpts` – best model weights (best.ckpt)
+- `runs/plots`
+- `runs/subsets`
+- `runs/config.json` 
 
-You can resume, change hyperparams, or run `--dry-run` to just build a batch and exit (sanity check).
-
-## 4) Tips
-- If VRAM is tight, lower `--batch-size` or force `--device cpu`.
-- First run will download the VAE (~335MB); later runs use the local cache.
-- For reproducible color labels in plots, we use Matplotlib’s default cycle.
