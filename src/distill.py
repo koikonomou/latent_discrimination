@@ -107,26 +107,3 @@ def select_kcenter_cosine_global(E, IDX, pct, seed=42):
     sel_rel = farthest_first_cosine(E, keep_total, seed=seed)
     return IDX[sel_rel].tolist()
 
-
-def select_margin_mix_balanced(E, Y, IDX, logits, pct, hard_fraction=0.5, num_classes=10, seed=42):
-    keep=[]
-    margins = per_sample_margin(logits, Y)
-    for c in range(num_classes):
-        m = (Y==c); Ec=E[m]; Ic=IDX[m]; Mc=margins[m]
-        k_keep = int(round((100 - pct) * len(Ic) / 100.0))
-        if k_keep <= 0: continue
-        if k_keep >= len(Ic): keep.extend(Ic.tolist()); continue
-        mu = l2_normalize_np(Ec.mean(axis=0, keepdims=True))
-        proto = (Ec @ mu.T).ravel()
-        hard  = -Mc
-        def mm(v): v=v-v.min(); mx=v.max(); return v/(mx+1e-8)
-        score = 0.5*mm(proto) + 0.5*mm(hard)
-        k_pool = min(len(Ic), max(k_keep*2, k_keep+5))
-        idx_sorted = np.argsort(-score)
-        pool_idx = idx_sorted[:k_pool]
-        n_hard = int(np.ceil(hard_fraction * k_keep))
-        idx_hard = np.argsort(Mc)[:n_hard]
-        pool = np.unique(np.concatenate([pool_idx, idx_hard]))
-        sel_rel = farthest_first_cosine(Ec[pool], k_keep, seed=seed)
-        keep.extend(Ic[pool][sel_rel].tolist())
-    return keep

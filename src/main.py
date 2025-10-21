@@ -166,9 +166,7 @@ def main():
         
         E_all=L_all=IDX_all=LOG_all=None
         if args.dd_method in ["kcenter_cosine","margin_mix"]:
-            E_all, Y_all, IDX_all, LOG_all = collect_embed_and_logits(
-                vae, embedder, head, train_loader_noshuf, device, vae_dtype
-            )
+            E_all, Y_all, IDX_all, LOG_all = collect_embed_and_logits(vae, embedder, head, train_loader_noshuf, device, vae_dtype)
 
         # CSV
         dd_csv = out_dir / "dd_curve.csv"
@@ -191,10 +189,7 @@ def main():
                     else:
                         Y_used = Y_all if sup=="groundtruth" else LOG_all.argmax(axis=1)
                         keep_idx = select_kcenter_cosine_balanced(E_all, Y_used, IDX_all, pct, num_classes=10, seed=args.seed)
-                else:
-                    Y_used = Y_all if sup=="groundtruth" else LOG_all.argmax(axis=1)
-                    keep_idx = select_margin_mix_balanced(E_all, Y_used, IDX_all, LOG_all, pct,
-                                                          hard_fraction=args.hard_fraction, num_classes=10, seed=args.seed)
+
 
                 subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
                 np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
