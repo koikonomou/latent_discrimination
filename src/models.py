@@ -64,8 +64,8 @@ class LatentConvEmbedder(nn.Module):
         self.block2 = ResidBlock(ch)
         self.block3 = ResidBlock(ch)
         self.head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),   # B×C×1×1
-            nn.Flatten(),              # B×C
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
             nn.Linear(ch, proj_dim),
         )
     def forward(self, z):
@@ -96,3 +96,11 @@ def encode_to_latent(vae, x, device, vae_dtype):
     else:
         z = out[0] * VAE_SCALE
     return z.to(torch.float32)
+
+class RawLatentEmbedder(nn.Module):
+    """Identity: flatten VAE latent (B,4,8,8) -> (B,256). No learnable params."""
+    def __init__(self, proj_dim=256):
+        super().__init__()
+        assert proj_dim == 256, "Raw latent has 256 dims (4×8×8)."
+    def forward(self, z):
+        return z.reshape(z.size(0), -1)

@@ -5,11 +5,12 @@ from sklearn.preprocessing import StandardScaler
 import torch
 from .models import encode_to_latent
 
-# ---- helpers ----
+
 def l2_normalize_np(X, eps=1e-8):
     n = np.linalg.norm(X, axis=1, keepdims=True) + eps
     return X / n
 
+# https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=6780070
 def farthest_first_cosine(Ec, k, seed=42):
     if Ec.shape[0] == 0: return np.array([], dtype=int)
     k = min(k, Ec.shape[0])
@@ -30,7 +31,7 @@ def per_sample_margin(logits, y):
     maxo = masked.max(axis=1)
     return (lt - maxo)
 
-# ---- feature collectors ----
+
 @torch.no_grad()
 def collect_embed_and_logits(vae, embedder, head, loader_no_shuffle, device, vae_dtype):
     embedder.eval(); head.eval()
@@ -56,7 +57,7 @@ def collect_vae_features(vae, embedder_throw, loader_no_shuffle, device, vae_dty
     base=0
     for xb, yb in loader_no_shuffle:
         xb = xb.to(device)
-        z = encode_to_latent(vae, xb, device, vae_dtype)  # [B,4,8,8]
+        z = encode_to_latent(vae, xb, device, vae_dtype)
         f = z.reshape(z.size(0), -1).cpu().numpy()
         Fs.append(f); Ys.append(yb.numpy())
         bsz=yb.size(0); IDX.append(np.arange(base, base+bsz)); base+=bsz
@@ -65,7 +66,7 @@ def collect_vae_features(vae, embedder_throw, loader_no_shuffle, device, vae_dty
     IDX_all = np.concatenate(IDX, axis=0)
     return F_all, Y_all, IDX_all
 
-# ---- K-means (euclid, whitened) ----
+## THiS is for the test with the original 
 def kmeans_assign_dist_whiten(F_all, k, seed=42):
     scaler = StandardScaler()
     Fw = scaler.fit_transform(F_all.astype(np.float32))
@@ -90,7 +91,6 @@ def make_distilled_indices_balanced(all_indices, distances, labels, pct, criteri
         keep.extend([int(i) for i in idx_c if int(i) not in drop_set])
     return keep
 
-# ---- k-center cosine (balanced & global) ----
 def select_kcenter_cosine_balanced(E, Y, IDX, pct, num_classes=10, seed=42):
     keep=[]
     for c in range(num_classes):
@@ -107,7 +107,7 @@ def select_kcenter_cosine_global(E, IDX, pct, seed=42):
     sel_rel = farthest_first_cosine(E, keep_total, seed=seed)
     return IDX[sel_rel].tolist()
 
-# ---- margin-mix ----
+
 def select_margin_mix_balanced(E, Y, IDX, logits, pct, hard_fraction=0.5, num_classes=10, seed=42):
     keep=[]
     margins = per_sample_margin(logits, Y)

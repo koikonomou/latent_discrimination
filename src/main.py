@@ -11,12 +11,8 @@ from .data import get_loaders
 from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder
 from .train import train_epoch, eval_epoch
 from .metrics import plot_tsne, embedding_metrics
-from .distill import (
-    collect_embed_and_logits, collect_vae_features,
-    kmeans_assign_dist_whiten, make_distilled_indices_balanced,
-    select_kcenter_cosine_balanced, select_kcenter_cosine_global,
-    select_margin_mix_balanced
-)
+from .distill import *
+
 from .metrics import plot_tsne, embedding_metrics
 from .train import eval_epoch
 from .models import encode_to_latent
@@ -24,18 +20,16 @@ from .distill import collect_embed_and_logits, collect_vae_features
 
 def parse_args():
     p = argparse.ArgumentParser()
-    # core
+    # basic
     p.add_argument("--dataset", type=str, default="mnist", choices=["mnist","cifar10"])
     p.add_argument("--image-size", type=int, default=64)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--device", type=str, default="auto", choices=["auto","cuda","cpu"])
     p.add_argument("--seed", type=int, default=42)
-    # model
+    # pretrained vae model
     p.add_argument("--vae", type=str, default="sd15", choices=["sd15","taesd"])
     p.add_argument("--sd15-path", type=str, default="./_sd15_vae")
-    p.add_argument("--embedder", type=str, default="mlp", choices=["mlp","conv"],
-                   help="mlp = SDVAE_Embedder (flatten+MLP), conv = LatentConvEmbedder (ResNet-style)")
 
     p.add_argument("--taesd-path", type=str, default="./_taesd")
     p.add_argument("--proj-dim", type=int, default=128)
@@ -45,23 +39,23 @@ def parse_args():
     # viz
     p.add_argument("--max-tsne-train", type=int, default=5000)
     p.add_argument("--max-tsne-test", type=int, default=5000)
+    
     # distill
     p.add_argument("--run-distill", action="store_true")
-    p.add_argument("--dd-method", type=str, default="kcenter_cosine",
-                   choices=["kmeans_euclid","kcenter_cosine","margin_mix"])
-    p.add_argument("--dd-criterion", type=str, default="nearest",
-                   choices=["nearest","furthest","random"])
+    p.add_argument("--dd-method", type=str, default="kcenter_cosine", choices=["kmeans_euclid","kcenter_cosine","margin_mix"])
+    p.add_argument("--dd-criterion", type=str, default="nearest", choices=["nearest","furthest","random"])
     p.add_argument("--dd-k", type=int, default=10)
     p.add_argument("--epochs-per-dd", type=int, default=10)
-    # if you want fixed epoch training for all DD set the following to "fixed"
+    # if you want fixed epoch training for all DD set the following to "fixed"a
     p.add_argument("--dd-epoch-mode", type=str, default="scaled", choices=["scaled","fixed"])
     p.add_argument("--hard-fraction", type=float, default=0.5)
-    p.add_argument("--dd-supervision", type=str, default="groundtruth",
-                   choices=["groundtruth","pseudo","unsupervised"])
-    # reproducibility / names
+    p.add_argument("--dd-supervision", type=str, default="groundtruth", choices=["groundtruth","pseudo","unsupervised"], help="unsupervised is for class agnistic approch ") 
+
     p.add_argument("--run-name", type=str, default="")
     p.add_argument("--skip-train", action="store_true")
     p.add_argument("--load-ckpt", type=str, default="")
+    p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
+
     return p.parse_args()
 
 def main():
@@ -69,36 +63,42 @@ def main():
     set_seed(args.seed)
     device = resolve_device(args.device)
 
-    # prepare run dir
     run_id = make_run_id(args)
     out_dir = prepare_run_dir(run_id)
     save_json(vars(args), out_dir / "config.json")
 
-    # data
+
     train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(
         args.dataset, args.image_size, args.batch_size, args.num_workers, device
     )
 
-    # vae
+
     vae_dtype = T.float16 if (device.type=="cuda" and args.vae=="sd15") else T.float32
     repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
 
     vae = load_vae(args.vae, repo, device, vae_dtype)
 
-    # model
+
     LATENT_HW = args.image_size // 8
     base_dim = 4 * LATENT_HW * LATENT_HW
     eff_proj_dim = args.proj_dim if args.embedder == "mlp" else max(args.proj_dim, 256)
 
-    if args.embedder == "conv":
-        embedder = LatentConvEmbedder(proj_dim=eff_proj_dim).to(device)
+
+    if args.embedder == "raw":
+        from .models import RawLatentEmbedder
+        embedder = RawLatentEmbedder(proj_dim=256).to(device)
+        proj_dim = 256
+    elif args.embedder == "mlp":
+        embedder = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
+        proj_dim = args.proj_dim
     else:
-        embedder = SDVAE_Embedder(eff_proj_dim, base_dim).to(device)
+        embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
+        proj_dim = max(args.proj_dim, 256)
+
 
     head = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.4, scale=30.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
 
-    # optional preload
     if args.load_ckpt:
         ckpt = T.load(args.load_ckpt, map_location=device)
         embedder.load_state_dict(ckpt["embedder"])
@@ -121,15 +121,13 @@ def main():
         print("Skipping baseline training (using loaded weights).")
     timer.stop()
 
-    # reload best
     if best_state is not None:
         embedder.load_state_dict(best_state[0]); head.load_state_dict(best_state[1])
         print(f"Reloaded BEST baseline weights (epoch {best_state[2]}, test_acc={best_state[3]:.4f})")
     else:
-        # if loaded from file
         pass
 
-    # embeddings + metrics + plots
+
     @T.no_grad()
     def collect(ldr, maxn):
         E=[]; L=[];
@@ -152,7 +150,7 @@ def main():
     sil, intra, margin = embedding_metrics(E_te, L_te)
     print("silhouette (cosine):", sil, "intra (1-cos):", intra, "inter-margin:", margin)
 
-    # timing + updates dump
+
     timing = {
         "baseline": {
             "wall_sec": timer.acc,
@@ -162,7 +160,7 @@ def main():
     }
     save_json(timing, out_dir / "timing.json")
 
-    # distillation sweep
+    # distillation
     if args.run_distill:
         # collect cosine features + logits (for kcenter/margin_mix)
         
@@ -172,7 +170,7 @@ def main():
                 vae, embedder, head, train_loader_noshuf, device, vae_dtype
             )
 
-        # prepare CSV
+        # CSV
         dd_csv = out_dir / "dd_curve.csv"
         with open(dd_csv, "w", newline="") as f:
             w = csv.writer(f); w.writerow(["pct","method","supervision","kept","epochs","best_epoch","best_test_acc","wall_sec","updates"])
@@ -187,24 +185,30 @@ def main():
                     _, d2 = kmeans_assign_dist_whiten(F_all, k=args.dd_k, seed=args.seed)
                     keep_idx = make_distilled_indices_balanced(IDX, d2, YY, pct, args.dd_criterion, seed=args.seed, num_classes=10)
                 elif args.dd_method == "kcenter_cosine":
-                    if sup == "unsupervised":
+
+                    if sup == "unsupervised": 
                         keep_idx = select_kcenter_cosine_global(E_all, IDX_all, pct, seed=args.seed)
                     else:
                         Y_used = Y_all if sup=="groundtruth" else LOG_all.argmax(axis=1)
                         keep_idx = select_kcenter_cosine_balanced(E_all, Y_used, IDX_all, pct, num_classes=10, seed=args.seed)
-                else:  # margin_mix
+                else:
                     Y_used = Y_all if sup=="groundtruth" else LOG_all.argmax(axis=1)
                     keep_idx = select_margin_mix_balanced(E_all, Y_used, IDX_all, LOG_all, pct,
                                                           hard_fraction=args.hard_fraction, num_classes=10, seed=args.seed)
 
-                # save subset indices
                 subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
                 np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
 
                 if args.embedder == "conv":
-                    model = LatentConvEmbedder(proj_dim=eff_proj_dim).to(device)
+                    model = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
+                    dd_proj_dim = max(args.proj_dim, 256)
+                elif args.embedder == "raw":
+                    model = SDVAE_Embedder(256, base_dim).to(device)
+                    dd_proj_dim = 256
                 else:
-                    model = SDVAE_Embedder(eff_proj_dim, base_dim).to(device)
+                    model = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
+                    dd_proj_dim = args.proj_dim
+
                 head2 = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.4, scale=28.0).to(device)
                 eff_lr = args.lr if (len(keep_idx)/len(train_ds))>0.3 else args.lr*0.7
                 opt2 = T.optim.AdamW(list(model.parameters())+list(head2.parameters()), lr=eff_lr, weight_decay=args.weight_decay)
@@ -213,11 +217,9 @@ def main():
                 sub_loader = T.utils.data.DataLoader(sub_ds, batch_size=args.batch_size, shuffle=True,
                                                          num_workers=args.num_workers, pin_memory=(device.type=="cuda"))
 
-                # epochs choice
                 keep_frac = len(keep_idx)/len(train_ds)
                 dd_epochs = epochs_for_fraction(args.epochs_per_dd, keep_frac, mode=args.dd_epoch_mode)
 
-                # train/eval with timing + updates
                 t = Stopwatch(); t.start()
                 uc = UpdateCounter()
                 best_te=-1.0; best_ep=-1; best_state=None
