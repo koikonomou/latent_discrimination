@@ -24,8 +24,8 @@ numpy = "^1.26"
 
 # Synthetic data
 matplotlib = "^3.7"
-shapely = "*"
-pandas = "*"
+shapely = "^2.1"
+pandas = "^2.3"
 
 
 [[tool.poetry.source]]
