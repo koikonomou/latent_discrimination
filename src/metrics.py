@@ -7,25 +7,46 @@ from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
 from pathlib import Path
 
+
 def make_tsne(**kwargs):
     sig = inspect.signature(TSNE.__init__)
-    kwargs.setdefault("random_state", 42)
     if "max_iter" in sig.parameters:
         kwargs.setdefault("max_iter", 1000)
     else:
         kwargs.setdefault("n_iter", 1000)
     return TSNE(**kwargs)
 
-def plot_tsne(E, L, out_path: Path, title: str):
-    Z = make_tsne(n_components=2, init="random", learning_rate="auto", perplexity=35).fit_transform(E)
-    plt.figure(figsize=(7,6))
-    for c in np.unique(L):
-        m = (L==c)
-        plt.scatter(Z[m,0], Z[m,1], s=6, alpha=0.7, label=str(c))
-    plt.legend(markerscale=3, fontsize=8, loc="best", frameon=False)
-    plt.title(title); plt.tight_layout()
+def _auto_perplexity(n_samples: int, default: int = 35) -> int | None:
+    """
+    Pick a safe perplexity for t-SNE given n_samples.
+    Returns None if n_samples is too small to run t-SNE robustly.
+    """
+    if n_samples < 10:
+        return None
+    # keep at least 5, cap at default, and ensure < n_samples
+    return max(5, min(default, (n_samples - 1) // 3))
+
+def plot_tsne(E: np.ndarray, labels: np.ndarray, out_path, title: str):
+    n = E.shape[0]
+    p = _auto_perplexity(n, default=35)
+    if p is None:
+        # Not enough points to run t-SNE sensibly; just skip plotting
+        print(f"[t-SNE] Skipping plot: only {n} samples.")
+        return
+
+    tsne = make_tsne(n_components=2, init="random", learning_rate="auto", perplexity=p)
+    Z = tsne.fit_transform(E)
+
+    plt.figure(figsize=(7, 6))
+    for c in np.unique(labels):
+        idx = labels == c
+        plt.scatter(Z[idx, 0], Z[idx, 1], s=8, alpha=0.7, label=str(c))
+    plt.legend(markerscale=2.5, fontsize=8, loc="best", frameon=False)
+    plt.title(f"{title} (perplexity={p}, n={n})")
+    plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=200); plt.close()
+    plt.savefig(out_path, dpi=200)
+    plt.close()
 
 def embedding_metrics(E_te, L_te):
     sil = silhouette_score(E_te, L_te, metric="cosine")

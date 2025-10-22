@@ -17,11 +17,12 @@ from .metrics import plot_tsne, embedding_metrics
 from .train import eval_epoch
 from .models import encode_to_latent
 from .distill import collect_embed_and_logits, collect_vae_features
+from .data_custom import get_custom_loaders
 
 def parse_args():
     p = argparse.ArgumentParser()
     # basic
-    p.add_argument("--dataset", type=str, default="mnist", choices=["mnist","cifar10"])
+    p.add_argument("--dataset", type=str, default="mnist", choices=["mnist","cifar10","custom"])
     p.add_argument("--image-size", type=int, default=64)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--num-workers", type=int, default=4)
@@ -55,7 +56,11 @@ def parse_args():
     p.add_argument("--skip-train", action="store_true")
     p.add_argument("--load-ckpt", type=str, default="")
     p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
-
+    # synthetic dataset
+    p.add_argument("--img-root", type=str, default="", help="Root folder with PNGs (for --dataset custom)")
+    p.add_argument("--labels-csv", type=str, default="", help="CSV with filename,label (for --dataset custom)")
+    p.add_argument("--val-split", type=float, default=0.2, help="Holdout fraction for custom dataset")
+  
     return p.parse_args()
 
 def main():
@@ -68,9 +73,21 @@ def main():
     save_json(vars(args), out_dir / "config.json")
 
 
-    train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(
-        args.dataset, args.image_size, args.batch_size, args.num_workers, device
-    )
+    if args.dataset == "custom":
+        if not args.img_root or not args.labels_csv:
+            raise SystemExit("--dataset custom requires --img-root and --labels-csv")
+        (train_ds, test_ds, train_loader, test_loader,
+         train_loader_noshuf, num_classes) = get_custom_loaders(
+            args.img_root, args.labels_csv, args.image_size, args.batch_size,
+            args.num_workers, device, test_size=args.val_split, seed=args.seed
+        )
+    else:
+        # existing path for mnist/cifar10
+        train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(
+            args.dataset, args.image_size, args.batch_size, args.num_workers, device
+        )
+    
+    num_classes = 10 if args.dataset in ["mnist", "cifar10"] else 2  # safety
 
 
     vae_dtype = T.float16 if (device.type=="cuda" and args.vae=="sd15") else T.float32
@@ -96,7 +113,7 @@ def main():
         proj_dim = max(args.proj_dim, 256)
 
 
-    head = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.4, scale=30.0).to(device)
+    head = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=30.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
 
     if args.load_ckpt:
@@ -181,14 +198,14 @@ def main():
                     throw_embed = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
                     F_all, YY, IDX = collect_vae_features(vae, throw_embed, train_loader_noshuf, device, vae_dtype)
                     _, d2 = kmeans_assign_dist_whiten(F_all, k=args.dd_k, seed=args.seed)
-                    keep_idx = make_distilled_indices_balanced(IDX, d2, YY, pct, args.dd_criterion, seed=args.seed, num_classes=10)
+                    keep_idx = make_distilled_indices_balanced(IDX, d2, YY, pct, args.dd_criterion, seed=args.seed, num_classes=num_classes)
                 elif args.dd_method == "kcenter_cosine":
 
                     if sup == "unsupervised": 
                         keep_idx = select_kcenter_cosine_global(E_all, IDX_all, pct, seed=args.seed)
                     else:
                         Y_used = Y_all if sup=="groundtruth" else LOG_all.argmax(axis=1)
-                        keep_idx = select_kcenter_cosine_balanced(E_all, Y_used, IDX_all, pct, num_classes=10, seed=args.seed)
+                        keep_idx = select_kcenter_cosine_balanced(E_all, Y_used, IDX_all, pct, num_classes=num_classes, seed=args.seed)
 
 
                 subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
@@ -204,7 +221,7 @@ def main():
                     model = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
                     dd_proj_dim = args.proj_dim
 
-                head2 = HASeparator(input_dim=args.proj_dim, num_classes=10, margin=0.4, scale=28.0).to(device)
+                head2 = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=28.0).to(device)
                 eff_lr = args.lr if (len(keep_idx)/len(train_ds))>0.3 else args.lr*0.7
                 opt2 = T.optim.AdamW(list(model.parameters())+list(head2.parameters()), lr=eff_lr, weight_decay=args.weight_decay)
 
