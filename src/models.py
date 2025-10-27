@@ -36,6 +36,40 @@ class SDVAE_Embedder(nn.Module):
     def forward(self, z_map):
         return self.proj(z_map.reshape(z_map.size(0), -1))
 
+class TinyLatentEmbedder(nn.Module):
+    """
+    Ultra-tiny embedder for SD-VAE latents (B,4,8,8):
+      1x1 Conv (4→C) → ReLU → GAP → Linear (C→proj_dim)
+    With C=6 and proj_dim=8 → ~80 params.
+    """
+    def __init__(self, proj_dim=8, channels=6, conv_bias=True, linear_bias=True):
+        super().__init__()
+        self.conv = nn.Conv2d(4, channels, kernel_size=1, bias=conv_bias)  # params: 4*C (+C if bias)
+        self.act  = nn.ReLU(inplace=True)
+        self.pool = nn.AdaptiveAvgPool2d(1)                                # no params
+        self.fc   = nn.Linear(channels, proj_dim, bias=linear_bias)        # params: C*D (+D if bias)
+
+    def forward(self, z):  # z: (B,4,H,W) e.g., (B,4,8,8)
+        h = self.act(self.conv(z))
+        h = self.pool(h).flatten(1)  # (B,C)
+        return self.fc(h)
+
+class SIMPLE_Embedder(nn.Module):
+    def __init__(self, proj_dim=128, channels=64):
+        super().__init__()
+        self.stem = nn.Sequential(
+            nn.Conv2d(4, channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, channels),
+            nn.ReLU(inplace=True),
+        )
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.head = nn.Linear(channels, proj_dim)
+
+    def forward(self, z):
+        h = self.stem(z)
+        h = self.pool(h).flatten(1)
+        return self.head(h)
+
 class ResidBlock(nn.Module):
     def __init__(self, ch):
         super().__init__()

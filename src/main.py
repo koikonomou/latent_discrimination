@@ -4,11 +4,12 @@ import numpy as np
 import argparse, json
 from pathlib import Path
 import torch as T
+from torchinfo import summary
 from torch.utils.data import DataLoader
 from .models import load_vae
 from .utils import set_seed, resolve_device, make_run_id, prepare_run_dir, save_json, Stopwatch, UpdateCounter, epochs_for_fraction
 from .data import get_loaders
-from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder
+from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder, SIMPLE_Embedder, TinyLatentEmbedder
 from .train import train_epoch, eval_epoch
 from .metrics import plot_tsne, embedding_metrics
 from .distill import *
@@ -55,7 +56,7 @@ def parse_args():
     p.add_argument("--run-name", type=str, default="")
     p.add_argument("--skip-train", action="store_true")
     p.add_argument("--load-ckpt", type=str, default="")
-    p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
+    p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw","simple", "tiny"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
     # synthetic dataset
     p.add_argument("--img-root", type=str, default="", help="Root folder with PNGs (for --dataset custom)")
     p.add_argument("--labels-csv", type=str, default="", help="CSV with filename,label (for --dataset custom)")
@@ -102,15 +103,24 @@ def main():
 
 
     if args.embedder == "raw":
-        from .models import RawLatentEmbedder
-        embedder = RawLatentEmbedder(proj_dim=256).to(device)
-        proj_dim = 256
+        embedder = RawLatentEmbedder(args.proj_dim).to(device)
+        summary(embedder, input_size=(1, 4, 8, 8))
     elif args.embedder == "mlp":
         embedder = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
         proj_dim = args.proj_dim
+        summary(embedder, input_size=(1, 4, 8, 8))
+    elif args.embedder == "simple":
+        embedder = SIMPLE_Embedder(proj_dim=args.proj_dim, channels=64).to(device)
+        proj_dim = args.proj_dim
+        summary(embedder, input_size=(1, 4, 8, 8))
+    elif args.embedder == "tiny":
+        embedder = TinyLatentEmbedder(proj_dim=args.proj_dim, channels=64).to(device)
+        proj_dim = args.proj_dim
+        summary(embedder, input_size=(1, 4, 8, 8))        
     else:
         embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
         proj_dim = max(args.proj_dim, 256)
+        summary(embedder, input_size=(1, 4, 8, 8))
 
 
     head = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=30.0).to(device)
