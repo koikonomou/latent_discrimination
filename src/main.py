@@ -72,7 +72,7 @@ def main():
 
     run_id = make_run_id(args)
     out_dir = prepare_run_dir(run_id)
-    save_json(vars(args), out_dir / "config.json")
+    save_json(vars(args), out_dir / "logs" / "config_baseline.json")
 
 
     if args.dataset == "custom":
@@ -266,7 +266,7 @@ def main():
                     "best_epoch": int(best_ep),
                     "wall_sec": t.acc
                 }, out_dir / "logs" / f"timing_{pct}.json")
-
+                save_json(vars(args), out_dir / "logs" / f"config_{pct}.json")
                 if best_state:
                     T.save({"embedder":best_state[0],"head":best_state[1],"epoch":best_ep,"test_acc":best_te},
                                out_dir / "ckpts" / f"dd_{pct}_best.ckpt")
