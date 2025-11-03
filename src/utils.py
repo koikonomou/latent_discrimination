@@ -36,6 +36,7 @@ def prepare_run_dir(run_id: str) -> Path:
     (out / "ckpts").mkdir(parents=True, exist_ok=True)
     (out / "plots").mkdir(parents=True, exist_ok=True)
     (out / "subsets").mkdir(parents=True, exist_ok=True)
+    (out / "logs").mkdir(parents=True, exist_ok=True)
     return out
 
 def make_plain_id(args: argparse.Namespace) -> str:

@@ -24,7 +24,8 @@ def parse_args():
     p = argparse.ArgumentParser()
     # basic
     p.add_argument("--dataset", type=str, default="mnist", choices=["mnist","cifar10","custom"])
-    p.add_argument("--image-size", type=int, default=64)
+    # 28 for mnist, 32 for cifar10
+    p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--device", type=str, default="auto", choices=["auto","cuda","cpu"])
@@ -104,24 +105,16 @@ def main():
 
     if args.embedder == "raw":
         embedder = RawLatentEmbedder(args.proj_dim).to(device)
-        summary(embedder, input_size=(1, 4, 8, 8))
     elif args.embedder == "mlp":
         embedder = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
-        proj_dim = args.proj_dim
-        summary(embedder, input_size=(1, 4, 8, 8))
     elif args.embedder == "simple":
         embedder = SIMPLE_Embedder(proj_dim=args.proj_dim, channels=64).to(device)
-        proj_dim = args.proj_dim
-        summary(embedder, input_size=(1, 4, 8, 8))
     elif args.embedder == "tiny":
-        embedder = TinyLatentEmbedder(proj_dim=args.proj_dim, channels=64).to(device)
-        proj_dim = args.proj_dim
-        summary(embedder, input_size=(1, 4, 8, 8))        
+        embedder = TinyLatentEmbedder(proj_dim=args.proj_dim).to(device)
     else:
         embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
-        proj_dim = max(args.proj_dim, 256)
-        summary(embedder, input_size=(1, 4, 8, 8))
 
+    summary(embedder, input_size=(1, 4, 8, 8))
 
     head = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=30.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
@@ -133,20 +126,31 @@ def main():
         print(f"Loaded checkpoint: {args.load_ckpt}")
 
     # baseline training
-    best_acc=-1.0; best_state=None
+    best_acc=-1.0;  best_ep = -1; best_state=None
     timer = Stopwatch(); timer.start()
     updates = UpdateCounter()
+    log_csv = out_dir / "logs" / "baseline_train_log.csv"
     if not args.skip_train:
-        for e in range(1, args.epochs+1):
-            tr_loss, tr_acc = train_epoch(vae, embedder, head, opt, train_loader, device, vae_dtype, counter=updates)
-            te_loss, te_acc = eval_epoch(vae, embedder, head, test_loader, device, vae_dtype)
-            print(f"Epoch {e:02d} | train loss {tr_loss:.4f} acc {tr_acc:.4f} | test loss {te_loss:.4f} acc {te_acc:.4f}")
-            if te_acc > best_acc:
-                best_acc = te_acc; best_state=(embedder.state_dict(), head.state_dict(), e, te_acc)
-                T.save({"embedder":best_state[0],"head":best_state[1],"epoch":e,"test_acc":te_acc}, out_dir / "ckpts" / "best.ckpt")
+        with open(log_csv, "w", newline="") as f:
+            w = csv.writer(f); w.writerow(["epoch","train_loss","train_acc","test_loss","test_acc","best_test_acc"])
+            for e in range(1, args.epochs+1):
+                tr_loss, tr_acc = train_epoch(vae, embedder, head, opt, train_loader, device, vae_dtype, counter=updates)
+                te_loss, te_acc = eval_epoch(vae, embedder, head, test_loader, device, vae_dtype)
+                print(f"Epoch {e:02d} | train loss {tr_loss:.4f} acc {tr_acc:.4f} | test loss {te_loss:.4f} acc {te_acc:.4f}")
+                if te_acc > best_acc:
+                    best_ep = e
+                    best_acc = te_acc; best_state=(embedder.state_dict(), head.state_dict(), e, te_acc)
+                    T.save({"embedder":best_state[0],"head":best_state[1],"epoch":e,"test_acc":te_acc}, out_dir / "ckpts" / "best.ckpt")
+                w.writerow([e, f"{tr_loss:.6f}", f"{tr_acc:.6f}", f"{te_loss:.6f}", f"{te_acc:.6f}", f"{best_acc:.6f}"])
     else:
         print("Skipping baseline training (using loaded weights).")
     timer.stop()
+
+    save_json({
+        "best_test_acc": float(best_acc),
+        "best_epoch": int(best_ep),
+        "wall_sec": timer.acc
+    }, out_dir / "logs" / "timing_baseline.json")
 
     if best_state is not None:
         embedder.load_state_dict(best_state[0]); head.load_state_dict(best_state[1])
@@ -244,14 +248,25 @@ def main():
 
                 t = Stopwatch(); t.start()
                 uc = UpdateCounter()
+                log_csv = out_dir / "logs" / f"train_{pct}_log.csv"
                 best_te=-1.0; best_ep=-1; best_state=None
-                for ep in range(1, dd_epochs+1):
-                    tl, ta = train_epoch(vae, model, head2, opt2, sub_loader, device, vae_dtype, counter=uc)
-                    _, te = eval_epoch(vae, model, head2, test_loader, device, vae_dtype)
-                    if te > best_te:
-                        best_te, best_ep = te, ep
-                        best_state = (model.state_dict(), head2.state_dict())
+                with open(log_csv, "w", newline="") as f:
+                    w = csv.writer(f); w.writerow(["epoch","train_loss","train_acc","test_loss","test_acc","best_test_acc"])
+                    for ep in range(1, dd_epochs+1):
+                        tr_l, tr_a = train_epoch(vae, model, head2, opt2, sub_loader, device, vae_dtype, counter=uc)
+                        te_l, te_a = eval_epoch(vae, model, head2, test_loader, device, vae_dtype)
+                        if te_a > best_te:
+                            best_te, best_ep = te_a, ep
+                            best_state = (model.state_dict(), head2.state_dict())
+                        w.writerow([ep, f"{tr_l:.6f}", f"{tr_a:.6f}", f"{te_l:.6f}", f"{te_a:.6f}", f"{best_te:.6f}"])
+
                 t.stop()
+                save_json({
+                    "best_test_acc": float(best_te),
+                    "best_epoch": int(best_ep),
+                    "wall_sec": t.acc
+                }, out_dir / "logs" / f"timing_{pct}.json")
+
                 if best_state:
                     T.save({"embedder":best_state[0],"head":best_state[1],"epoch":best_ep,"test_acc":best_te},
                                out_dir / "ckpts" / f"dd_{pct}_best.ckpt")
