@@ -1,7 +1,44 @@
+"""
+This code include all the models for the training process.
+The classes ImageToLatentAdapter and PlainFromLatentBackbone are used to transform the plain dataset to (B,4,8,8) similar to the latent dims so we don't have to change the inital models.
+The HASeparator approach is developed based on this paper :
+Kansizoglou, Ioannis, et al. "Haseparator: Hyperplane-assisted softmax." 2020 19th IEEE International Conference on Machine Learning and Applications (ICMLA). IEEE, 2020.
+All the other embedders are used for testing.
+"""
 import torch, torch.nn as nn, torch.nn.functional as F
 from diffusers import AutoencoderKL, AutoencoderTiny
 
 VAE_SCALE = 0.18215
+
+
+class ImageToLatentAdapter(nn.Module):
+    """
+    Map image (B, Cin, H, W) to 'latent-like' (B, 4, 8, 8) without using the VAE.
+    - AdaptiveAvgPool2d -> (8,8)
+    - 1x1 conv to go Cin->{4} channels (Cin can be 1 or 3)
+    """
+    def __init__(self, in_ch: int):
+        super().__init__()
+        self.pool = nn.AdaptiveAvgPool2d((8, 8))
+        self.map  = nn.Conv2d(in_ch, 4, kernel_size=1, bias=False)
+
+    def forward(self, x):
+        x = self.pool(x)           # (B, Cin, 8, 8)
+        z = self.map(x)            # (B, 4,   8, 8)
+        return z
+
+class PlainFromLatentBackbone(nn.Module):
+    def __init__(self, backbone: nn.Module, feat_dim: int, num_classes: int, in_ch: int):
+        super().__init__()
+        self.adapt = ImageToLatentAdapter(in_ch)
+        self.backbone = backbone
+        self.fc = nn.Linear(feat_dim, num_classes)
+
+    def forward(self, x):          # x: images (B, Cin, H, W)
+        z = self.adapt(x)          # (B,4,8,8)
+        f = self.backbone(z)       # (B, feat_dim)
+        return self.fc(f)          # (B, num_classes)
+
 
 class HASeparator(nn.Module):
     def __init__(self, input_dim, num_classes, margin=0.4, scale=30.0):
@@ -107,6 +144,14 @@ class LatentConvEmbedder(nn.Module):
         h = self.block1(h); h = self.block2(h); h = self.block3(h)
         return self.head(h)
 
+class RawLatentEmbedder(nn.Module):
+    """Identity: flatten VAE latent (B,4,8,8) -> (B,256). No learnable params."""
+    def __init__(self, proj_dim=256):
+        super().__init__()
+        assert proj_dim == 256, "Raw latent has 256 dims (4×8×8)."
+    def forward(self, z):
+        return z.reshape(z.size(0), -1)
+
 def load_vae(backend: str, repo_path: str, device, dtype):
     if backend == "sd15":
         vae = AutoencoderKL.from_pretrained(repo_path, torch_dtype=dtype).to(device)
@@ -131,10 +176,3 @@ def encode_to_latent(vae, x, device, vae_dtype):
         z = out[0] * VAE_SCALE
     return z.to(torch.float32)
 
-class RawLatentEmbedder(nn.Module):
-    """Identity: flatten VAE latent (B,4,8,8) -> (B,256). No learnable params."""
-    def __init__(self, proj_dim=256):
-        super().__init__()
-        assert proj_dim == 256, "Raw latent has 256 dims (4×8×8)."
-    def forward(self, z):
-        return z.reshape(z.size(0), -1)

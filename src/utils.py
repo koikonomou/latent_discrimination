@@ -26,7 +26,6 @@ def make_run_id(args: argparse.Namespace) -> str:
         ts,
         f"dataset={args.dataset}",
         f"method={args.dd_method}" if args.run_distill else "method=baseline",
-        f"seed={args.seed}",
     ]
     if args.run_name:
         parts.insert(1, args.run_name)
@@ -37,6 +36,28 @@ def prepare_run_dir(run_id: str) -> Path:
     (out / "ckpts").mkdir(parents=True, exist_ok=True)
     (out / "plots").mkdir(parents=True, exist_ok=True)
     (out / "subsets").mkdir(parents=True, exist_ok=True)
+    return out
+
+def make_plain_id(args: argparse.Namespace) -> str:
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    name, extension = os.path.splitext(args.subset_file)
+    if extension.lower() == '.txt':
+        num = name[-2:]
+    else:
+        return "ERROR in subset filename: Not a .txt file or format is incorrect"
+    parts = [
+        ts,
+        f"dataset={args.dataset}",
+        f"DD={num}",
+    ]
+    if args.run_name:
+        parts.insert(1, args.run_name)
+    return "_".join(parts)
+
+def prepare_plain_dir(run_id: str) -> Path:
+    out = Path("runs") / run_id
+    (out / "ckpts").mkdir(parents=True, exist_ok=True)
+    (out / "plots").mkdir(parents=True, exist_ok=True)
     return out
 
 def save_json(d: dict, path: Path):
