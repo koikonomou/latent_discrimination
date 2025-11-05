@@ -107,7 +107,7 @@ def get_custom_loaders(img_root: str, csv_path: str, image_size: int, batch_size
     train_ds = _Wrap(full, idx_tr, train_tf)
     test_ds  = _Wrap(full, idx_te,  test_tf)
 
-    pin = resolve_device("auto")
+    pin = device
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin)
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
     train_loader_noshuf = DataLoader(train_ds, batch_size=256, shuffle=False, num_workers=0, pin_memory=pin)

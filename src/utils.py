@@ -10,14 +10,22 @@ def set_seed(seed: int = 42):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
+    
 def resolve_device(arg: str) -> torch.device:
     if arg == "auto":
         device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
-        return torch.cuda.set_device(device)
-    if arg == "cpu":
+    elif arg == "cpu":
         device = torch.device("cpu")
-        return torch.cuda.set_device(device)
+    else:
+        raise ValueError(f"Unknown device: {arg}")
+    
+    if device.type == "cuda":
+        torch.cuda.set_device(device)  # optional, sets default CUDA device
+    return device
+
 
 def make_run_id(args: argparse.Namespace) -> str:
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

@@ -7,8 +7,8 @@ from torchvision import transforms, datasets
 from sklearn.datasets import fetch_openml
 from .utils import resolve_device
 
-def get_loaders(dataset: str, image_size: int, batch_size: int, num_workers: int, device: torch.device):
-    pin = resolve_device("auto")
+def get_loaders(dataset: str, image_size: int, batch_size: int, num_workers: int, device):
+    pin = device
 
     if dataset.lower() == "mnist":
         tf = transforms.Compose([

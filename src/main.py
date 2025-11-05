@@ -67,7 +67,7 @@ def parse_args():
 def main():
     args = parse_args()
     set_seed(args.seed)
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     torch.cuda.set_device(device) 
     print(f"Current default CUDA device: {torch.cuda.current_device()}")
 
@@ -84,14 +84,12 @@ def main():
         )
     else:
         # existing path for mnist/cifar10
-        train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(
-            args.dataset, args.image_size, args.batch_size, args.num_workers, device
-        )
+        train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(args.dataset, args.image_size, args.batch_size, args.num_workers, device)
     
     num_classes = 10 if args.dataset in ["mnist", "cifar10"] else 2 
 
 
-    vae_dtype = T.float16 if (args.device=="auto" and args.vae=="sd15") else T.float32
+    vae_dtype = T.float16 #if (args.device=="auto" and args.vae=="sd15") else T.float32
     # repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
     if args.vae=="sd15" :
         repo = args.sd15_path or "stabilityai/sd-vae-ft-mse"
