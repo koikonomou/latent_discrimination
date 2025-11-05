@@ -28,7 +28,6 @@ def parse_args():
     p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--num-workers", type=int, default=4)
-    p.add_argument("--device", type=str, default="auto", choices=["auto","cpu"])
     p.add_argument("--seed", type=int, default=42)
     # pretrained vae model
     p.add_argument("--vae", type=str, default="sd15", choices=["sd15","taesd"])
@@ -68,7 +67,8 @@ def parse_args():
 def main():
     args = parse_args()
     set_seed(args.seed)
-    device = resolve_device(args.device)
+    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    torch.cuda.set_device(device) 
     print(f"Current default CUDA device: {torch.cuda.current_device()}")
 
     run_id = make_run_id(args)
@@ -80,9 +80,7 @@ def main():
         if not args.img_root or not args.labels_csv:
             raise SystemExit("--dataset custom requires --img-root and --labels-csv")
         (train_ds, test_ds, train_loader, test_loader,
-         train_loader_noshuf, num_classes) = get_custom_loaders(
-            args.img_root, args.labels_csv, args.image_size, args.batch_size,
-            args.num_workers, device, test_size=args.val_split, seed=args.seed
+         train_loader_noshuf, num_classes) = get_custom_loaders(args.img_root, args.labels_csv, args.image_size, args.batch_size, args.num_workers, device, test_size=args.val_split, seed=args.seed
         )
     else:
         # existing path for mnist/cifar10
@@ -90,7 +88,7 @@ def main():
             args.dataset, args.image_size, args.batch_size, args.num_workers, device
         )
     
-    num_classes = 10 if args.dataset in ["mnist", "cifar10"] else 2  # safety
+    num_classes = 10 if args.dataset in ["mnist", "cifar10"] else 2 
 
 
     vae_dtype = T.float16 if (args.device=="auto" and args.vae=="sd15") else T.float32
@@ -279,7 +277,11 @@ def main():
                                out_dir / "ckpts" / f"dd_{pct}_best.ckpt")
 
                 print(f"[DD/{args.dd_method}:{sup}] pct={pct}% kept={len(keep_idx)} epochs={dd_epochs} | BEST {best_te:.4f} (ep {best_ep})")
-                w.writerow([pct, args.dd_method, sup, len(keep_idx), dd_epochs, best_ep, f"{best_te:.6f}", f"{t.acc:.3f}", uc.steps])
+                summary_csv  = out_dir / "logs" / f"summary_{pct}.csv"
+                with open(summary_csv, "w", newline="") as f_summary:
+                    w_summary = csv.writer(f_summary)
+                    w_summary.writerow(["pct", "dd_method", "sup", "kept", "epochs", "best_ep", "best_test_acc", "wall_sec", "steps"])
+                    w_summary.writerow([pct, args.dd_method, sup, len(keep_idx), dd_epochs, best_ep, f"{best_te:.6f}", f"{t.acc:.3f}", uc.steps])
 
 if __name__ == "__main__":
     main()
