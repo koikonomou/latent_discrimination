@@ -19,7 +19,6 @@ def parse_args():
     p.add_argument("--lr", type=float, default=5e-4)
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--num-workers", type=int, default=4)
-    p.add_argument("--device", choices=["auto","cuda","cpu"], default="auto")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out", type=str, default="")
     p.add_argument("--pretrained", action="store_true", help="Start from ImageNet pretrained weights")
@@ -122,7 +121,8 @@ def main():
     with open(csv_path, "w", newline="") as fcsv:
         w = csv.writer(fcsv)
         w.writerow(["epoch","train_loss","train_acc","test_loss","test_acc","lr"])
-
+    
+    start_time = time.time()
     best_acc = 0.0
     best_epoch = -1
     best_ckpt = out_dir/"ckpts"/"best_resnet50.ckpt"
@@ -189,8 +189,27 @@ def main():
             print(f"Epoch {ep:03d} | train {train_loss:.4f}/{train_acc:.4f} | "
                   f"test {test_loss:.4f}/{test_acc:.4f} | best {best_acc:.4f} (ep {best_epoch})")
 
-    print(f"Best test acc: {best_acc:.4f} at epoch {best_epoch} | ckpt: {best_ckpt}")
-    print(f"Metrics CSV saved to: {csv_path}")
+        wall_sec = time.time() - start_time
 
+        # Count parameters
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+        # Save JSON
+        params_json_path = out_dir / "logs" / "params_baseline.json"
+        params_json_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(params_json_path, "w") as fjson:
+            json.dump({
+                "best_test_acc": float(best_acc),
+                "best_epoch": int(best_epoch),
+                "wall_sec": wall_sec,
+                "total_params": total_params,
+                "trainable_params": trainable_params
+            }, fjson, indent=4)
+
+        print(f"Best test acc: {best_acc:.4f} at epoch {best_epoch} | ckpt: {best_ckpt}")
+        print(f"Metrics CSV saved to: {csv_path}")
+        print(f"Params JSON saved to: {params_json_path}")
+        print(f"Training took {wall_sec:.2f} seconds")
 if __name__ == "__main__":
     main()
