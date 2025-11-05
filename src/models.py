@@ -8,6 +8,7 @@ All the other embedders are used for testing.
 import torch, torch.nn as nn, torch.nn.functional as F
 from diffusers import AutoencoderKL, AutoencoderTiny
 
+# This param is used in Stable Diffusion to normalize latent vectors
 VAE_SCALE = 0.18215
 
 
@@ -141,7 +142,9 @@ class LatentConvEmbedder(nn.Module):
         )
     def forward(self, z):
         h = self.stem(z)
-        h = self.block1(h); h = self.block2(h); h = self.block3(h)
+        h = self.block1(h)
+        h = self.block2(h)
+        h = self.block3(h)
         return self.head(h)
 
 class RawLatentEmbedder(nn.Module):

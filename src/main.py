@@ -51,7 +51,7 @@ def parse_args():
     # if you want fixed epoch training for all DD set the following to "fixed"a
     p.add_argument("--dd-epoch-mode", type=str, default="scaled", choices=["scaled","fixed"])
     p.add_argument("--hard-fraction", type=float, default=0.5)
-    p.add_argument("--dd-supervision", type=str, default="groundtruth", choices=["groundtruth","pseudo","unsupervised"], help="unsupervised is for class agnistic approch ") 
+    p.add_argument("--dd-supervision", type=str, default="groundtruth", choices=["groundtruth","pseudo","unsupervised"], help="unsupervised is for class agnostic approach ") 
 
     p.add_argument("--run-name", type=str, default="")
     p.add_argument("--skip-train", action="store_true")
@@ -79,9 +79,8 @@ def main():
     if args.dataset == "custom":
         if not args.img_root or not args.labels_csv:
             raise SystemExit("--dataset custom requires --img-root and --labels-csv")
-        (train_ds, test_ds, train_loader, test_loader,
-         train_loader_noshuf, num_classes) = get_custom_loaders(args.img_root, args.labels_csv, args.image_size, args.batch_size, args.num_workers, device, test_size=args.val_split, seed=args.seed
-        )
+        (train_ds, test_ds, train_loader, test_loader, train_loader_noshuf, num_classes) = 
+        get_custom_loaders(args.img_root, args.labels_csv, args.image_size, args.batch_size, args.num_workers, device, test_size=args.val_split, seed=args.seed)
     else:
         # existing path for mnist/cifar10
         train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(args.dataset, args.image_size, args.batch_size, args.num_workers, device)
@@ -91,6 +90,7 @@ def main():
 
     vae_dtype = T.float16 #if (args.device=="auto" and args.vae=="sd15") else T.float32
     # repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
+    #TODO: FIX THIS
     if args.vae=="sd15" :
         repo = args.sd15_path or "stabilityai/sd-vae-ft-mse"
     elif args.vae=="taesd":
@@ -103,8 +103,6 @@ def main():
 
     LATENT_HW = args.image_size // 8
     base_dim = 4 * LATENT_HW * LATENT_HW
-    eff_proj_dim = args.proj_dim if args.embedder == "mlp" else max(args.proj_dim, 256)
-
 
     if args.embedder == "raw":
         embedder = RawLatentEmbedder(args.proj_dim).to(device)
@@ -121,7 +119,9 @@ def main():
 
     head = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=30.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
-
+    total_params = sum(p.numel() for p in embedder.parameters())
+    trainable_params = sum(p.numel() for p in embedder.parameters() if p.requires_grad)
+                
     if args.load_ckpt:
         ckpt = T.load(args.load_ckpt, map_location=device)
         embedder.load_state_dict(ckpt["embedder"])
@@ -152,8 +152,10 @@ def main():
     save_json({
         "best_test_acc": float(best_acc),
         "best_epoch": int(best_ep),
-        "wall_sec": timer.acc
-    }, out_dir / "logs" / "timing_baseline.json")
+        "wall_sec": timer.acc,
+        "total_params": total_params,
+        "trainable_params": trainable_params
+    }, out_dir / "logs" / "params_baseline.json")
 
     if best_state is not None:
         embedder.load_state_dict(best_state[0]); head.load_state_dict(best_state[1])
@@ -185,14 +187,6 @@ def main():
     print("silhouette (cosine):", sil, "intra (1-cos):", intra, "inter-margin:", margin)
 
 
-    timing = {
-        "baseline": {
-            "wall_sec": timer.acc,
-            "updates": updates.steps,
-            "best_test_acc": float(best_acc)
-        }
-    }
-    save_json(timing, out_dir / "timing.json")
 
     # distillation
     if args.run_distill:
@@ -244,7 +238,7 @@ def main():
 
                 sub_ds = T.utils.data.Subset(train_ds, keep_idx)
                 sub_loader = T.utils.data.DataLoader(sub_ds, batch_size=args.batch_size, shuffle=True,
-                                                         num_workers=args.num_workers, pin_memory=(args.device=="auto"))
+                                                         num_workers=args.num_workers, pin_memory=(device))
 
                 keep_frac = len(keep_idx)/len(train_ds)
                 dd_epochs = epochs_for_fraction(args.epochs_per_dd, keep_frac, mode=args.dd_epoch_mode)

@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 import torchvision as tv
 import random, torch
+from .utils import save_json
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -28,10 +29,6 @@ def parse_args():
 def set_seed(s):
     random.seed(s); np.random.seed(s); torch.manual_seed(s); torch.cuda.manual_seed_all(s)
 
-def dev(kind):
-    if kind=="auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(kind)
 
 def get_loaders(dataset, data_root, subset_path, batch_size, num_workers):
     subset_idx = np.loadtxt(subset_path, dtype=np.int64).tolist()
@@ -79,13 +76,17 @@ def get_loaders(dataset, data_root, subset_path, batch_size, num_workers):
 def main():
     args = parse_args()
     set_seed(args.seed)
-    device = dev(args.device)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.set_device(device) 
+    print(f"Current default CUDA device: {torch.cuda.current_device()}")
+
 
     subset_name = Path(args.subset_file).with_suffix("").name
     default_dir = f"runs_resnet/{time.strftime('%Y%m%d-%H%M%S')}_{subset_name}"
     out_dir = Path(args.out) if args.out else Path(default_dir)
     (out_dir/"ckpts").mkdir(parents=True, exist_ok=True)
     (out_dir/"logs").mkdir(parents=True, exist_ok=True)
+    save_json(vars(args), out_dir / "logs" / f"config_DD_{subset_name}.json")
 
     train_loader, test_loader, num_classes, n_train, n_test = get_loaders(args.dataset, args.data_root, args.subset_file, args.batch_size, args.num_workers)
 
@@ -102,6 +103,18 @@ def main():
     criterion = nn.CrossEntropyLoss(label_smoothing=0.0)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr*0.1)
+    
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                
+
+    save_json({
+        "best_test_acc": float(best_acc),
+        "best_epoch": int(best_ep),
+        "wall_sec": timer.acc,
+        "total_params": total_params,
+        "trainable_params": trainable_params
+    }, out_dir / "logs" / "params_baseline.json")
 
     scaler = torch.amp.GradScaler(enabled=args.amp)
 
