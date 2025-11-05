@@ -28,7 +28,7 @@ def parse_args():
     p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--num-workers", type=int, default=4)
-    p.add_argument("--device", type=str, default="auto", choices=["auto","cuda","cpu"])
+    p.add_argument("--device", type=str, default="auto", choices=["auto","cpu"])
     p.add_argument("--seed", type=int, default=42)
     # pretrained vae model
     p.add_argument("--vae", type=str, default="sd15", choices=["sd15","taesd"])
@@ -69,6 +69,7 @@ def main():
     args = parse_args()
     set_seed(args.seed)
     device = resolve_device(args.device)
+    print(f"Current default CUDA device: {torch.cuda.current_device()}")
 
     run_id = make_run_id(args)
     out_dir = prepare_run_dir(run_id)
@@ -92,8 +93,14 @@ def main():
     num_classes = 10 if args.dataset in ["mnist", "cifar10"] else 2  # safety
 
 
-    vae_dtype = T.float16 if (device.type=="cuda" and args.vae=="sd15") else T.float32
-    repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
+    vae_dtype = T.float16 if (args.device=="auto" and args.vae=="sd15") else T.float32
+    # repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
+    if args.vae=="sd15" :
+        repo = args.sd15_path or "stabilityai/sd-vae-ft-mse"
+    elif args.vae=="taesd":
+        repo = args.taesd_path or "madebyollin/taesd" 
+    else:
+        raise ValueError("No autoencoder model detected")
 
     vae = load_vae(args.vae, repo, device, vae_dtype)
 
@@ -241,7 +248,7 @@ def main():
 
                 sub_ds = T.utils.data.Subset(train_ds, keep_idx)
                 sub_loader = T.utils.data.DataLoader(sub_ds, batch_size=args.batch_size, shuffle=True,
-                                                         num_workers=args.num_workers, pin_memory=(device.type=="cuda"))
+                                                         num_workers=args.num_workers, pin_memory=(args.device=="auto"))
 
                 keep_frac = len(keep_idx)/len(train_ds)
                 dd_epochs = epochs_for_fraction(args.epochs_per_dd, keep_frac, mode=args.dd_epoch_mode)

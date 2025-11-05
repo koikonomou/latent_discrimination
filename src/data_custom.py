@@ -4,11 +4,11 @@ import csv
 from typing import List, Tuple
 import numpy as np
 from PIL import Image
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from sklearn.model_selection import train_test_split
+from .utils import resolve_device
 
 def _normalize_label(val, invert: bool = False) -> int:
     # Accept 0/1, True/False,
@@ -107,7 +107,7 @@ def get_custom_loaders(img_root: str, csv_path: str, image_size: int, batch_size
     train_ds = _Wrap(full, idx_tr, train_tf)
     test_ds  = _Wrap(full, idx_te,  test_tf)
 
-    pin = (device.type == "cuda")
+    pin = resolve_device("auto")
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=num_workers, pin_memory=pin)
     test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
     train_loader_noshuf = DataLoader(train_ds, batch_size=256, shuffle=False, num_workers=0, pin_memory=pin)

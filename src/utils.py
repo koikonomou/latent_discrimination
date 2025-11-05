@@ -2,9 +2,9 @@ import os, json, time, math, argparse, datetime, hashlib
 from pathlib import Path
 import numpy as np
 import torch
+import random
 
 def set_seed(seed: int = 42):
-    import random
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -13,12 +13,11 @@ def set_seed(seed: int = 42):
 
 def resolve_device(arg: str) -> torch.device:
     if arg == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if arg == "cuda":
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA requested but not available.")
-        return torch.device("cuda")
-    return torch.device("cpu")
+        device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+        return torch.cuda.set_device(device)
+    if arg == "cpu":
+        device = torch.device("cpu")
+        return torch.cuda.set_device(device)
 
 def make_run_id(args: argparse.Namespace) -> str:
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

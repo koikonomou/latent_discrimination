@@ -4,12 +4,13 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms, datasets
+from sklearn.datasets import fetch_openml
+from .utils import resolve_device
 
 def get_loaders(dataset: str, image_size: int, batch_size: int, num_workers: int, device: torch.device):
-    pin = device.type == "cuda"
+    pin = resolve_device("auto")
 
     if dataset.lower() == "mnist":
-        from sklearn.datasets import fetch_openml
         tf = transforms.Compose([
             transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
