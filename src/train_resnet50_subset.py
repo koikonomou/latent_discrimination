@@ -107,14 +107,6 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
                 
 
-    save_json({
-        "best_test_acc": float(best_acc),
-        "best_epoch": int(best_ep),
-        "wall_sec": timer.acc,
-        "total_params": total_params,
-        "trainable_params": trainable_params
-    }, out_dir / "logs" / "params_baseline.json")
-
     scaler = torch.amp.GradScaler(enabled=args.amp)
 
     csv_path = out_dir/"logs"/"metrics.csv"
@@ -198,14 +190,13 @@ def main():
         # Save JSON
         params_json_path = out_dir / "logs" / "params_baseline.json"
         params_json_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(params_json_path, "w") as fjson:
-            json.dump({
+        save_json({
                 "best_test_acc": float(best_acc),
                 "best_epoch": int(best_epoch),
                 "wall_sec": wall_sec,
                 "total_params": total_params,
                 "trainable_params": trainable_params
-            }, fjson, indent=4)
+            }, params_json_path)
 
         print(f"Best test acc: {best_acc:.4f} at epoch {best_epoch} | ckpt: {best_ckpt}")
         print(f"Metrics CSV saved to: {csv_path}")
