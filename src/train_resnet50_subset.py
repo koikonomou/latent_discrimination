@@ -13,7 +13,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", choices=["cifar10","mnist"], default="cifar10")
     p.add_argument("--data-root", type=str, default="./data")
-    p.add_argument("--subset-file", type=str, required=True, help="runs/.../subsets/keep_idx_XX.txt")
+    p.add_argument("--subset-file", type=str, default="", help="Optional: runs/.../subsets/keep_idx_XX.txt")
     p.add_argument("--epochs", type=int, default=120)
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=5e-4)
@@ -30,7 +30,10 @@ def set_seed(s):
 
 
 def get_loaders(dataset, data_root, subset_path, batch_size, num_workers):
-    subset_idx = np.loadtxt(subset_path, dtype=np.int64).tolist()
+    if subset_path and Path(subset_path).exists():
+        subset_idx = np.loadtxt(subset_path, dtype=np.int64).tolist()
+    else:
+        subset_idx = None 
 
     if dataset == "cifar10":
         normalize = tv.transforms.Normalize(mean=[0.485,0.456,0.406],std=[0.229,0.224,0.225])
@@ -66,8 +69,12 @@ def get_loaders(dataset, data_root, subset_path, batch_size, num_workers):
         train_full = tv.datasets.MNIST(root=data_root, train=True, download=True, transform=train_tf)
         test_set   = tv.datasets.MNIST(root=data_root, train=False, download=True, transform=test_tf)
         num_classes = 10
-
-    train_set = Subset(train_full, subset_idx)
+    
+    if subset_idx is not None:
+        train_set = Subset(train_full, subset_idx)
+    else:
+        train_set = train_full
+    
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     test_loader  = DataLoader(test_set,  batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
     return train_loader, test_loader, num_classes, len(train_set), len(test_set)
@@ -79,8 +86,11 @@ def main():
     torch.cuda.set_device(device) 
     print(f"Current default CUDA device: {torch.cuda.current_device()}")
 
+    if args.subset_file:
+        subset_name = Path(args.subset_file).with_suffix("").name
+    else:
+        subset_name = "full_dataset"
 
-    subset_name = Path(args.subset_file).with_suffix("").name
     default_dir = f"runs_resnet/{time.strftime('%Y%m%d-%H%M%S')}_{subset_name}"
     out_dir = Path(args.out) if args.out else Path(default_dir)
     (out_dir/"ckpts").mkdir(parents=True, exist_ok=True)
