@@ -5,8 +5,10 @@ The HASeparator approach is developed based on this paper :
 Kansizoglou, Ioannis, et al. "Haseparator: Hyperplane-assisted softmax." 2020 19th IEEE International Conference on Machine Learning and Applications (ICMLA). IEEE, 2020.
 All the other embedders are used for testing.
 """
+import os
 import torch, torch.nn as nn, torch.nn.functional as F
 from diffusers import AutoencoderKL, AutoencoderTiny
+from huggingface_hub import snapshot_download
 
 # This param is used in Stable Diffusion to normalize latent vectors
 VAE_SCALE = 0.18215
@@ -49,8 +51,8 @@ class HASeparator(nn.Module):
         self.scale = scale
         self.margin = margin
 
-    def forward(self, spk_embeddings, labels=None):
-        x = F.normalize(spk_embeddings, p=2, dim=1)
+    def forward(self, embed, labels=None):
+        x = F.normalize(embed, p=2, dim=1)
         w = F.normalize(self.weight, p=2, dim=0)
         logits = self.scale * (x @ w)
         penalties = None
@@ -157,9 +159,31 @@ class RawLatentEmbedder(nn.Module):
 
 def load_vae(backend: str, repo_path: str, device, dtype):
     if backend == "sd15":
-        vae = AutoencoderKL.from_pretrained(repo_path, torch_dtype=dtype).to(device)
+        if not os.path.isdir('repo_path'):
+            snapshot_download(
+                repo_id="stabilityai/sd-vae-ft-mse",
+                local_dir="./_sd15_vae",
+                allow_patterns=["diffusion_pytorch_model.safetensors", "config.json"],
+                resume_download=True,             # resumes partials
+                max_workers=8                     # parallel chunks
+            )
+            print("SD vae downloaded at -> ./_sd15_vae")
+            vae = AutoencoderKL.from_pretrained(repo_path, torch_dtype=dtype).to(device)
+        else:
+            vae = AutoencoderKL.from_pretrained(repo_path, torch_dtype=dtype).to(device)
     elif backend == "taesd":
-        vae = AutoencoderTiny.from_pretrained(repo_path).to(device)
+        if not os.path.isdir('repo_path'):
+            snapshot_download(
+                repo_id="madebyollin/taesd",
+                local_dir="./_taesd",
+                allow_patterns=["diffusion_pytorch_model.safetensors", "config.json"],
+                resume_download=True,             # resumes partials
+                max_workers=8                     # parallel chunks
+            )
+            print("Taesd vae downloaded at -> ./_taesd")
+            vae = AutoencoderTiny.from_pretrained(repo_path).to(device)
+        else:
+            vae = AutoencoderTiny.from_pretrained(repo_path).to(device)
     else:
         raise ValueError("backend must be 'sd15' or 'taesd'")
     for p in vae.parameters(): p.requires_grad_(False)

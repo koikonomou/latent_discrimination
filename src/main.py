@@ -6,7 +6,6 @@ from pathlib import Path
 import torch as T
 from torchinfo import summary
 from torch.utils.data import DataLoader
-from .models import load_vae
 from .utils import set_seed, resolve_device, make_run_id, prepare_run_dir, save_json, Stopwatch, UpdateCounter, epochs_for_fraction
 from .data import get_loaders
 from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder, SIMPLE_Embedder, TinyLatentEmbedder
@@ -79,8 +78,7 @@ def main():
     if args.dataset == "custom":
         if not args.img_root or not args.labels_csv:
             raise SystemExit("--dataset custom requires --img-root and --labels-csv")
-        (train_ds, test_ds, train_loader, test_loader, train_loader_noshuf, num_classes) = 
-        get_custom_loaders(args.img_root, args.labels_csv, args.image_size, args.batch_size, args.num_workers, device, test_size=args.val_split, seed=args.seed)
+        (train_ds, test_ds, train_loader, test_loader, train_loader_noshuf, num_classes) = get_custom_loaders(args.img_root, args.labels_csv, args.image_size, args.batch_size, args.num_workers, device, test_size=args.val_split, seed=args.seed)
     else:
         # existing path for mnist/cifar10
         train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(args.dataset, args.image_size, args.batch_size, args.num_workers, device)
@@ -92,9 +90,9 @@ def main():
     # repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
     #TODO: FIX THIS
     if args.vae=="sd15" :
-        repo = args.sd15_path or "stabilityai/sd-vae-ft-mse"
+        repo = args.sd15_path
     elif args.vae=="taesd":
-        repo = args.taesd_path or "madebyollin/taesd" 
+        repo = args.taesd_path 
     else:
         raise ValueError("No autoencoder model detected")
 
@@ -113,7 +111,7 @@ def main():
     elif args.embedder == "tiny":
         embedder = TinyLatentEmbedder(proj_dim=args.proj_dim).to(device)
     else:
-        embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
+        embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 128)).to(device)
 
     summary(embedder, input_size=(1, 4, 8, 8))
 
