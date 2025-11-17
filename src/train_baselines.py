@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, Subset
 import torchvision as tv
 import random, torch
 from .utils import save_json
+from .model_baselines import create_model
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -29,24 +30,6 @@ def parse_args():
 def set_seed(s):
     random.seed(s); np.random.seed(s); torch.manual_seed(s); torch.cuda.manual_seed_all(s)
 
-def build_model(arch: str, num_classes: 10, pretrained: bool):
-    if arch == "resnet50":
-        Weights = tv.models.ResNet50_Weights
-        weights = Weights.IMAGENET1K_V2 if pretrained else None
-        model = tv.models.resnet50(weights=weights)
-        in_features = model.fc.in_features
-        model.fc = nn.Linear(in_features, num_classes)
-        arch_tag = "resnet50"
-    elif arch == "densenet169":
-        Weights = tv.models.DenseNet169_Weights
-        weights = Weights.IMAGENET1K_V1 if pretrained else None
-        model = tv.models.densenet169(weights=weights)
-        in_features = model.classifier.in_features
-        model.classifier = nn.Linear(in_features, num_classes)
-        arch_tag = "densenet169"
-    else:
-        raise ValueError(f"Unsupported arch: {arch}")
-    return model, arch_tag
 
 def get_loaders(dataset, data_root, subset_path, batch_size, num_workers):
     if subset_path and Path(subset_path).exists():
@@ -111,24 +94,16 @@ def main():
         subset_name = "full_dataset"
 
     train_loader, test_loader, num_classes, n_train, n_test = get_loaders(args.dataset, args.data_root, args.subset_file, args.batch_size, args.num_workers)
-    model, tag = build_model(args.arch, num_classes=num_classes, pretrained=args.pretrained)
+    print(f"Subset size: {n_train} | Test size: {n_test}")
+
+    model, tag = create_model(args.arch, num_classes=num_classes, pretrained=args.pretrained)
 
     default_dir = f"runs_{tag}/{time.strftime('%Y%m%d-%H%M%S')}_{subset_name}"
     out_dir = Path(args.out) if args.out else Path(default_dir)
     (out_dir/"ckpts").mkdir(parents=True, exist_ok=True)
     (out_dir/"logs").mkdir(parents=True, exist_ok=True)
     save_json(vars(args), out_dir / "logs" / f"config_DD_{subset_name}.json")
-
-
-    print(f"Subset size: {n_train} | Test size: {n_test}")
-
-    # if args.pretrained:
-    #     weights = tv.models.ResNet50_Weights.IMAGENET1K_V2
-    #     model = tv.models.resnet50(weights=weights)
-    # else:
-    #     model = tv.models.resnet50(weights=None)
-    # model.fc = nn.Linear(model.fc.in_features, num_classes)
-
+    
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.0)
