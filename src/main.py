@@ -22,7 +22,7 @@ from .data_custom import get_custom_loaders
 def parse_args():
     p = argparse.ArgumentParser()
     # basic
-    p.add_argument("--dataset", type=str, default="mnist", choices=["mnist","cifar10","custom"])
+    p.add_argument("--dataset", type=str, default="mnist", choices=["mnist","fashion_mnist","cifar10","cifar100","tinyimagenet","custom"])
     # 28 for mnist, 32 for cifar10
     p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=64)
