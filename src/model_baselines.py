@@ -117,7 +117,8 @@ def _make_resnet(depth: int, norm: str, num_classes: int, pretrained: bool):
         _replace_bn_with_in(model)
     elif norm == "nn":
         _strip_norm_layers(model)
-    else: continue
+    else: 
+        pass
     # norm == "bn": keep default BN
 
     in_features = model.fc.in_features
