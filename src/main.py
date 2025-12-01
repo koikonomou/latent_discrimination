@@ -16,7 +16,6 @@ from .distill import *
 from .metrics import plot_tsne, embedding_metrics
 from .train import eval_epoch
 from .models import encode_to_latent
-from .distill import collect_embed_and_logits, collect_vae_features
 from .data_custom import get_custom_loaders
 
 def parse_args():
@@ -36,6 +35,7 @@ def parse_args():
     p.add_argument("--proj-dim", type=int, default=128)
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--lr", type=float, default=2e-3)
+    p.add_argument("--num-classes", type=int, default=10)
     p.add_argument("--weight-decay", type=float, default=1e-4)
     # viz
     p.add_argument("--max-tsne-train", type=int, default=5000)
@@ -43,8 +43,9 @@ def parse_args():
     
     # distill
     p.add_argument("--run-distill", action="store_true")
-    p.add_argument("--dd-method", type=str, default="kcenter_cosine", choices=["kmeans_euclid","kcenter_cosine","margin_mix"])
+    p.add_argument("--dd-method", type=str, default="kcenter_cosine", choices=["kmeans_euclid","kcenter_cosine","margin_mix","select_random"])
     p.add_argument("--dd-criterion", type=str, default="nearest", choices=["nearest","furthest","random"])
+    p.add_argument("--no-percentage", action="store_false", dest="percentage", help="Use absolute numbers instead of percentage")
     p.add_argument("--dd-k", type=int, default=10)
     p.add_argument("--epochs-per-dd", type=int, default=10)
     # if you want fixed epoch training for all DD set the following to "fixed"a
@@ -83,7 +84,6 @@ def main():
         # existing path for mnist/cifar10
         train_ds, test_ds, train_loader, test_loader, train_loader_noshuf = get_loaders(args.dataset, args.image_size, args.batch_size, args.num_workers, device)
     
-    num_classes = 10 if args.dataset in ["mnist", "cifar10"] else 2 
 
 
     vae_dtype = T.float16 #if (args.device=="auto" and args.vae=="sd15") else T.float32
@@ -115,7 +115,7 @@ def main():
 
     summary(embedder, input_size=(1, 4, 8, 8))
 
-    head = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=30.0).to(device)
+    head = HASeparator(input_dim=args.proj_dim, num_classes=args.num_classes, margin=0.4, scale=30.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
     total_params = sum(p.numel() for p in embedder.parameters())
     trainable_params = sum(p.numel() for p in embedder.parameters() if p.requires_grad)
@@ -185,13 +185,12 @@ def main():
     print("silhouette (cosine):", sil, "intra (1-cos):", intra, "inter-margin:", margin)
 
 
-
     # distillation
     if args.run_distill:
         # collect cosine features + logits (for kcenter/margin_mix)
         
         E_all=L_all=IDX_all=LOG_all=None
-        if args.dd_method in ["kcenter_cosine","margin_mix"]:
+        if args.dd_method in ["kcenter_cosine","margin_mix","select_random"]:
             E_all, Y_all, IDX_all, LOG_all = collect_embed_and_logits(vae, embedder, head, train_loader_noshuf, device, vae_dtype)
 
         # CSV
@@ -199,7 +198,11 @@ def main():
         with open(dd_csv, "w", newline="") as f:
             w = csv.writer(f); w.writerow(["pct","method","supervision","kept","epochs","best_epoch","best_test_acc","wall_sec","updates"])
 
-            schedule = [10,20,30,40,50,60,70,80,90]
+            # schedule = [10,20,30,40,50,60,70,80,90]
+            if args.percentage:
+                schedule = [10,20,30,40,50,60,70,80,90]
+            else :
+                schedule= [10,50]
             for pct in schedule:
                 # choose keep_idx
                 sup = args.dd_supervision
@@ -207,15 +210,11 @@ def main():
                     throw_embed = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
                     F_all, YY, IDX = collect_vae_features(vae, throw_embed, train_loader_noshuf, device, vae_dtype)
                     _, d2 = kmeans_assign_dist_whiten(F_all, k=args.dd_k, seed=args.seed)
-                    keep_idx = make_distilled_indices_balanced(IDX, d2, YY, pct, args.dd_criterion, seed=args.seed, num_classes=num_classes)
+                    keep_idx = make_distilled_indices_balanced(IDX, d2, YY, pct, args.dd_criterion, seed=args.seed, num_classes=args.num_classes)
                 elif args.dd_method == "kcenter_cosine":
-
-                    if sup == "unsupervised": 
-                        keep_idx = select_kcenter_cosine_global(E_all, IDX_all, pct, seed=args.seed)
-                    else:
-                        Y_used = Y_all if sup=="groundtruth" else LOG_all.argmax(axis=1)
-                        keep_idx = select_kcenter_cosine_balanced(E_all, Y_used, IDX_all, pct, num_classes=num_classes, seed=args.seed)
-
+                    keep_idx = select_kcenter_cosine_balanced(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes, seed=args.seed)
+                elif args.dd_method == "select_random":
+                    keep_idx = select_random(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes,seed=args.seed)
 
                 subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
                 np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
@@ -230,7 +229,7 @@ def main():
                     model = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
                     dd_proj_dim = args.proj_dim
 
-                head2 = HASeparator(input_dim=args.proj_dim, num_classes=num_classes, margin=0.4, scale=28.0).to(device)
+                head2 = HASeparator(input_dim=args.proj_dim, num_classes=args.num_classes, margin=0.4, scale=28.0).to(device)
                 eff_lr = args.lr if (len(keep_idx)/len(train_ds))>0.3 else args.lr*0.7
                 opt2 = T.optim.AdamW(list(model.parameters())+list(head2.parameters()), lr=eff_lr, weight_decay=args.weight_decay)
 

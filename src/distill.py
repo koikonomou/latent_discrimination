@@ -91,11 +91,14 @@ def make_distilled_indices_balanced(all_indices, distances, labels, pct, criteri
         keep.extend([int(i) for i in idx_c if int(i) not in drop_set])
     return keep
 
-def select_kcenter_cosine_balanced(E, Y, IDX, pct, num_classes=10, seed=42):
+def select_kcenter_cosine_balanced(E, Y, IDX, pct, percentage=False, num_classes=10, seed=42):
     keep=[]
     for c in range(num_classes):
         m = (Y==c); Ec = E[m]; Ic = IDX[m]
-        k_keep = int(round((100 - pct) * len(Ic) / 100.0))
+        if percentage==True:
+            k_keep = int(round((100 - pct) * len(Ic) / 100.0))
+        else:
+            k_keep = min(pct, len(Ic))
         if k_keep <= 0: continue
         if k_keep >= len(Ic): keep.extend(Ic.tolist()); continue
         sel_rel = farthest_first_cosine(Ec, k_keep, seed=seed)
@@ -106,4 +109,20 @@ def select_kcenter_cosine_global(E, IDX, pct, seed=42):
     keep_total = int(round((100 - pct) * len(IDX) / 100.0))
     sel_rel = farthest_first_cosine(E, keep_total, seed=seed)
     return IDX[sel_rel].tolist()
+
+def select_random(E, Y, IDX, pct, percentage=False, num_classes=10, seed=42):
+    rng = np.random.default_rng(seed)
+
+    keep = []
+    for c in range(num_classes):
+        m = (Y==c); Ec=E[m]; Ic = IDX[m]
+        if percentage==True:
+            k_keep = int(round((100 - pct) * len(Ic) / 100.0))
+        else:
+            k_keep = min(pct, len(Ic))
+        if k_keep<=0: continue
+        if k_keep>= len(Ic): keep.extend(Ic.tolist()); continue
+        chosen = rng.choice(Ic, size=k_keep, replace=False)
+        keep.extend(chosen.tolist())
+    return keep
 
