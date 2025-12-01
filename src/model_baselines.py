@@ -117,6 +117,7 @@ def _make_resnet(depth: int, norm: str, num_classes: int, pretrained: bool):
         _replace_bn_with_in(model)
     elif norm == "nn":
         _strip_norm_layers(model)
+    else: continue
     # norm == "bn": keep default BN
 
     in_features = model.fc.in_features
@@ -210,9 +211,9 @@ def create_model(arch: str, num_classes: int = 10, pretrained: bool = False):
         model = _make_resnet(50, norm="bn", num_classes=num_classes, pretrained=pretrained)
         return model, "resnet50-bn"
 
-    if key == "resnet101-in":
-        model = _make_resnet(101, norm="in", num_classes=num_classes, pretrained=pretrained)
-        return model, "resnet101-in"
+    if key == "resnet101-bn":
+        model = _make_resnet(101, norm="bn", num_classes=num_classes, pretrained=pretrained)
+        return model, "resnet101-bn"
 
     if key == "resnet152-in":
         model = _make_resnet(152, norm="in", num_classes=num_classes, pretrained=pretrained)
