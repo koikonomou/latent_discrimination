@@ -56,12 +56,12 @@ def parse_args():
     p.add_argument("--image-size", type=int, default=64)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--num-workers", type=int, default=4)
-    p.add_argument("--device", type=str, default="auto", choices=["auto","cuda","cpu"])
+    p.add_argument("--device", type=str, default="cuda", choices=["auto","cuda","cpu"])
     p.add_argument("--seed", type=int, default=42)
 
     # model
     p.add_argument("--proj-dim", type=int, default=256)
-    p.add_argument("--arch", type=str, default="simple", choices=["conv","mlp","raw","simple","tiny"], help="mlp=SDVAE_Embedder, conv=LatentConvEmbedder, raw=flatten, simple=SIMPLE_Embedder, tiny=TinyLatentEmbedder")
+    p.add_argument("--arch", type=str, default="covn", choices=["conv","mlp","raw","simple","tiny"], help="mlp=SDVAE_Embedder, conv=LatentConvEmbedder, raw=flatten, simple=SIMPLE_Embedder, tiny=TinyLatentEmbedder")
     p.add_argument("--keep-pct", type=float, default=100.0, help="Randomly keep this percentage of the training set (e.g., 10, 20, ... 90), 100.0 means use full dataset.")
     p.add_argument("--distill", action="store_true" )
     # opt
@@ -83,8 +83,8 @@ def parse_args():
 def main():
     args = parse_args()
     set_seed(args.seed)
-    device = resolve_device(args.device)
-
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.set_device(device) 
     # out dir
     run_id = make_plain_id(args)
     out_dir = prepare_plain_dir(run_id)

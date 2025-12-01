@@ -124,7 +124,7 @@ def main():
     start_time = time.time()
     best_acc = 0.0
     best_epoch = -1
-    best_ckpt = out_dir/"ckpts"/"best_resnet50.ckpt"
+    best_ckpt = out_dir/"ckpts"/f"best_{args.arch}.ckpt"
 
     for ep in range(1, args.epochs+1):
         model.train()
