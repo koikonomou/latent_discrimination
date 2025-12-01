@@ -54,21 +54,16 @@ def parse_args():
     p = argparse.ArgumentParser("Train plain CNNs on distilled subsets (no VAE, no HASeparator).")
     p.add_argument("--dataset", type=str, default="cifar10", choices=["mnist","cifar10","custom"])
     p.add_argument("--image-size", type=int, default=64)
-    p.add_argument("--batch-size", type=int, default=128)
+    p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--device", type=str, default="auto", choices=["auto","cuda","cpu"])
     p.add_argument("--seed", type=int, default=42)
 
-
-    # VAE
-    p.add_argument("--vae", type=str, default="sd15", choices=["sd15","taesd"])
-    p.add_argument("--sd15-path", type=str, default="./_sd15_vae")
-    p.add_argument("--taesd-path", type=str, default="./_taesd")
-
     # model
-    p.add_argument("--proj-dim", type=int, default=128)
+    p.add_argument("--proj-dim", type=int, default=256)
     p.add_argument("--arch", type=str, default="simple", choices=["conv","mlp","raw","simple","tiny"], help="mlp=SDVAE_Embedder, conv=LatentConvEmbedder, raw=flatten, simple=SIMPLE_Embedder, tiny=TinyLatentEmbedder")
-
+    p.add_argument("--keep-pct", type=float, default=100.0, help="Randomly keep this percentage of the training set (e.g., 10, 20, ... 90), 100.0 means use full dataset.")
+    p.add_argument("--distill", action="store_true" )
     # opt
     p.add_argument("--epochs", type=int, default=60)
     p.add_argument("--lr", type=float, default=3e-4)
@@ -119,6 +114,26 @@ def main():
         train_loader = DataLoader(sub_train, batch_size=args.batch_size, shuffle=True,
                                   num_workers=args.num_workers, pin_memory=pin)
         print(f"Using distilled subset: {len(sub_train)} samples | Test size: {len(test_ds)}")
+    elif args.distill:
+        if args.keep_pct < 100.0:
+            n = len(train_ds)
+            k_keep = max(1, int(round(args.keep_pct * n / 100.0)))
+            rng = np.random.default_rng(args.seed)
+            keep_idx = rng.choice(n, size=k_keep, replace=False)
+            sub_train = Subset(train_ds, keep_idx.tolist())
+            train_loader = DataLoader(
+                sub_train,
+                batch_size=args.batch_size,
+                shuffle=True,
+                num_workers=args.num_workers,
+                pin_memory=pin,
+            )
+            subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
+            np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
+            print(
+                f"Using random subset with keep-pct={args.keep_pct:.1f}%: "
+                f"{len(sub_train)}/{n} samples | Test size: {len(test_ds)}"
+            )
     else:
         train_loader = train_loader_full
         print(f"Using FULL train split: {len(train_ds)} | Test size: {len(test_ds)}")
