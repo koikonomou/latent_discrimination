@@ -89,17 +89,23 @@ def main():
     print(f"Current default CUDA device: {torch.cuda.current_device()}")
 
     if args.subset_file:
-        subset_name = Path(args.subset_file).with_suffix("").name
+        subset_path = Path(args.subset_file)
+        subset_name = subset_path.with_suffix("").name
+        exp_root = subset_path.parents[1]
     else:
         subset_name = "full_dataset"
+        exp_root = Path("runs") / "full_dataset"
 
     train_loader, test_loader, num_classes, n_train, n_test = get_loaders(args.dataset, args.data_root, args.subset_file, args.batch_size, args.num_workers)
     print(f"Subset size: {n_train} | Test size: {n_test}")
 
     model, tag = create_model(args.arch, num_classes=num_classes, pretrained=args.pretrained)
 
-    default_dir = f"runs_{tag}/{time.strftime('%Y%m%d-%H%M%S')}_{subset_name}"
-    out_dir = Path(args.out) if args.out else Path(default_dir)
+    baseline_root = exp_root / "baselines" / tag
+    default_dir = baseline_root / subset_name
+
+    out_dir = Path(args.out) if args.out else default_dir
+    
     (out_dir/"ckpts").mkdir(parents=True, exist_ok=True)
     (out_dir/"logs").mkdir(parents=True, exist_ok=True)
     save_json(vars(args), out_dir / "logs" / f"config_DD_{subset_name}.json")
@@ -119,7 +125,7 @@ def main():
     csv_path = out_dir/"logs"/"metrics.csv"
     with open(csv_path, "w", newline="") as fcsv:
         w = csv.writer(fcsv)
-        w.writerow(["epoch","train_loss","train_acc","test_loss","test_acc","lr"])
+        w.writerow(["epoch", "train_loss","train_acc","test_loss","test_acc","lr"])
     
     start_time = time.time()
     best_acc = 0.0
