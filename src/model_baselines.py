@@ -1,7 +1,7 @@
 # models_zoo.py
 import torch
 import torch.nn as nn
-import torchvision.models as tv
+import torchvision as tv
 
 
 # -------------------------
@@ -91,23 +91,23 @@ def _make_resnet(depth: int, norm: str, num_classes: int, pretrained: bool):
     if depth == 18:
         WeightsEnum = tv.models.ResNet18_Weights
         weights = WeightsEnum.IMAGENET1K_V1 if pretrained else None
-        base = tv.resnet18
+        base = tv.models.resnet18
     elif depth == 34:
         WeightsEnum = tv.models.ResNet34_Weights
         weights = WeightsEnum.IMAGENET1K_V1 if pretrained else None
-        base = tv.resnet34
+        base = tv.models.resnet34
     elif depth == 50:
         WeightsEnum = tv.models.ResNet50_Weights
         weights = WeightsEnum.IMAGENET1K_V2 if pretrained else None
-        base = tv.resnet50
+        base = tv.models.resnet50
     elif depth == 101:
         WeightsEnum = tv.models.ResNet101_Weights
         weights = WeightsEnum.IMAGENET1K_V2 if pretrained else None
-        base = tv.resnet101
+        base = tv.models.resnet101
     elif depth == 152:
         WeightsEnum = tv.models.ResNet152_Weights
         weights = WeightsEnum.IMAGENET1K_V2 if pretrained else None
-        base = tv.resnet152
+        base = tv.models.resnet152
     else:
         raise ValueError(f"Unsupported ResNet depth: {depth}")
 
@@ -152,14 +152,14 @@ def create_model(arch: str, num_classes: int = 10, pretrained: bool = False):
     if key == "alexnet-nn":
         Weights = tv.models.AlexNet_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
-        model = tv.alexnet(weights=weights)
+        model = tv.models.alexnet(weights=weights)
         model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
         return model, "alexnet-nn"
 
     if key == "alexnet-in":
         Weights = tv.models.AlexNet_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
-        model = tv.alexnet(weights=weights)
+        model = tv.models.alexnet(weights=weights)
         model.features = _insert_in_after_conv(model.features)
         model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
         return model, "alexnet-in"
@@ -168,14 +168,14 @@ def create_model(arch: str, num_classes: int = 10, pretrained: bool = False):
     if key == "vgg11-bn":
         Weights = tv.models.VGG11_BN_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
-        model = tv.vgg11_bn(weights=weights)
+        model = tv.models.vgg11_bn(weights=weights)
         model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
         return model, "vgg11-bn"
 
     if key == "vgg11-in":
         Weights = tv.models.VGG11_BN_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
-        model = tv.vgg11_bn(weights=weights)
+        model = tv.models.vgg11_bn(weights=weights)
         _replace_bn_with_in(model.features)
         model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
         return model, "vgg11-in"
