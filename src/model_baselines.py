@@ -89,23 +89,23 @@ def _strip_norm_layers(module: nn.Module):
 
 def _make_resnet(depth: int, norm: str, num_classes: int, pretrained: bool):
     if depth == 18:
-        WeightsEnum = tv.models.ResNet18_Weights
+        WeightsEnum = tv.ResNet18_Weights
         weights = WeightsEnum.IMAGENET1K_V1 if pretrained else None
         base = tv.resnet18
     elif depth == 34:
-        WeightsEnum = tv.models.ResNet34_Weights
+        WeightsEnum = tv.ResNet34_Weights
         weights = WeightsEnum.IMAGENET1K_V1 if pretrained else None
         base = tv.resnet34
     elif depth == 50:
-        WeightsEnum = tv.models.ResNet50_Weights
+        WeightsEnum = tv.ResNet50_Weights
         weights = WeightsEnum.IMAGENET1K_V2 if pretrained else None
         base = tv.resnet50
     elif depth == 101:
-        WeightsEnum = tv.models.ResNet101_Weights
+        WeightsEnum = tv.ResNet101_Weights
         weights = WeightsEnum.IMAGENET1K_V2 if pretrained else None
         base = tv.resnet101
     elif depth == 152:
-        WeightsEnum = tv.models.ResNet152_Weights
+        WeightsEnum = tv.ResNet152_Weights
         weights = WeightsEnum.IMAGENET1K_V2 if pretrained else None
         base = tv.resnet152
     else:
@@ -152,14 +152,14 @@ def create_model(arch: str, num_classes: int = 10, pretrained: bool = False):
 
     # ---- AlexNet ----
     if key == "alexnet-nn":
-        Weights = tv.models.AlexNet_Weights
+        Weights = tv.AlexNet_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
         model = tv.alexnet(weights=weights)
         model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
         return model, "alexnet-nn"
 
     if key == "alexnet-in":
-        Weights = tv.models.AlexNet_Weights
+        Weights = tv.AlexNet_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
         model = tv.alexnet(weights=weights)
         model.features = _insert_in_after_conv(model.features)
@@ -168,14 +168,14 @@ def create_model(arch: str, num_classes: int = 10, pretrained: bool = False):
 
     # ---- VGG11 ----
     if key == "vgg11-bn":
-        Weights = tv.models.VGG11_BN_Weights
+        Weights = tv.VGG11_BN_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
         model = tv.vgg11_bn(weights=weights)
         model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
         return model, "vgg11-bn"
 
     if key == "vgg11-in":
-        Weights = tv.models.VGG11_BN_Weights
+        Weights = tv.VGG11_BN_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
         model = tv.vgg11_bn(weights=weights)
         _replace_bn_with_in(model.features)
@@ -184,9 +184,9 @@ def create_model(arch: str, num_classes: int = 10, pretrained: bool = False):
 
     # ---- Densenet169 ----
     if key == "densenet169":
-        Weights = tv.models.DenseNet169_Weights
+        Weights = tv.DenseNet169_Weights
         weights = Weights.IMAGENET1K_V1 if pretrained else None
-        model = tv.models.densenet169(weights=weights)
+        model = tv.densenet169(weights=weights)
         in_features = model.classifier.in_features
         model.classifier = nn.Linear(in_features, num_classes)
         return model, "densenet169"
