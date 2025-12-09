@@ -9,6 +9,7 @@ import os
 import torch, torch.nn as nn, torch.nn.functional as F
 from diffusers import AutoencoderKL, AutoencoderTiny
 from huggingface_hub import snapshot_download
+from torchvision import models as tv_models
 
 # This param is used in Stable Diffusion to normalize latent vectors
 VAE_SCALE = 0.18215
