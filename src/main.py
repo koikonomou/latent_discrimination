@@ -72,7 +72,7 @@ def parse_args():
     p.add_argument("--run-name", type=str, default="")
     p.add_argument("--skip-train", action="store_true")
     p.add_argument("--load-ckpt", type=str, default="")
-    p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw","simple", "tiny"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
+    p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw","simple", "tiny","resnet"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
     # synthetic dataset
     p.add_argument("--img-root", type=str, default="", help="Root folder with PNGs (for --dataset custom)")
     p.add_argument("--labels-csv", type=str, default="", help="CSV with filename,label (for --dataset custom)")
