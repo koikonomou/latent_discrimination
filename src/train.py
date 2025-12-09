@@ -9,7 +9,8 @@ def ha_loss(logits, labels, penalties, lambda_pen=1.0):
     ce = F.cross_entropy(logits, labels)
     if penalties is None:
         return ce
-    cos_pen = penalties.sum(dim=1).mean()     return ce + lambda_pen * cos_pen
+    cos_pen = penalties.sum(dim=1).mean() 
+    return ce + lambda_pen * cos_pen
 
 
 
