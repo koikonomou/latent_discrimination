@@ -8,7 +8,7 @@ from torchinfo import summary
 from torch.utils.data import DataLoader
 from .utils import set_seed, resolve_device, make_run_id, prepare_run_dir, save_json, Stopwatch, UpdateCounter, epochs_for_fraction
 from .data import get_loaders
-from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder, SIMPLE_Embedder, TinyLatentEmbedder
+from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder, SIMPLE_Embedder, TinyLatentEmbedder, ResNet18LatentEmbedder
 from .train import train_epoch, eval_epoch
 from .metrics import plot_tsne, embedding_metrics
 from .distill import *
@@ -17,6 +17,22 @@ from .metrics import plot_tsne, embedding_metrics
 from .train import eval_epoch
 from .models import encode_to_latent
 from .data_custom import get_custom_loaders
+
+@T.no_grad()
+def collect_embeddings(vae, embedder, head, loader, device, vae_dtype, maxn=None):
+    E, L = [], []
+    embedder.eval(); head.eval()
+    seen = 0
+    for xb, yb in loader:
+        xb, yb = xb.to(device), yb.to(device)
+        z = encode_to_latent(vae, xb, device, vae_dtype)   # (B,4,8,8)
+        feat = embedder(z)                                 # (B, proj_dim)
+        _, emb, _ = head(feat, labels=None)                # normalized features
+        E.append(emb.cpu()); L.append(yb.cpu())
+        seen += yb.size(0)
+        if maxn and seen >= maxn:
+            break
+    return T.cat(E).numpy(), T.cat(L).numpy()
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -110,12 +126,14 @@ def main():
         embedder = SIMPLE_Embedder(proj_dim=args.proj_dim, channels=64).to(device)
     elif args.embedder == "tiny":
         embedder = TinyLatentEmbedder(proj_dim=args.proj_dim).to(device)
+    elif args.embedder == "resnet":
+        embedder = ResNet18LatentEmbedder(proj_dim=args.proj_dim, pretrained=False).to(device)
     else:
         embedder = LatentConvEmbedder(proj_dim=max(args.proj_dim, 128)).to(device)
 
     summary(embedder, input_size=(1, 4, 8, 8))
 
-    head = HASeparator(input_dim=args.proj_dim, num_classes=args.num_classes, margin=0.4, scale=30.0).to(device)
+    head = HASeparator(input_dim=args.proj_dim, num_classes=args.num_classes, margin=0.1, scale=5.0).to(device)
     opt = T.optim.AdamW(list(embedder.parameters())+list(head.parameters()), lr=args.lr, weight_decay=args.weight_decay)
     total_params = sum(p.numel() for p in embedder.parameters())
     trainable_params = sum(p.numel() for p in embedder.parameters() if p.requires_grad)
@@ -225,11 +243,14 @@ def main():
                 elif args.embedder == "raw":
                     model = SDVAE_Embedder(256, base_dim).to(device)
                     dd_proj_dim = 256
+                elif args.embedder == "resnet":
+                    model = ResNet18LatentEmbedder(proj_dim=args.proj_dim, pretrained=False).to(device)
+                    dd_proj_dim = args.proj_dim
                 else:
                     model = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
                     dd_proj_dim = args.proj_dim
 
-                head2 = HASeparator(input_dim=args.proj_dim, num_classes=args.num_classes, margin=0.4, scale=28.0).to(device)
+                head2 = HASeparator(input_dim=dd_proj_dim, num_classes=args.num_classes, margin=0.4, scale=28.0).to(device)
                 eff_lr = args.lr if (len(keep_idx)/len(train_ds))>0.3 else args.lr*0.7
                 opt2 = T.optim.AdamW(list(model.parameters())+list(head2.parameters()), lr=eff_lr, weight_decay=args.weight_decay)
 
@@ -264,6 +285,17 @@ def main():
                 if best_state:
                     T.save({"embedder":best_state[0],"head":best_state[1],"epoch":best_ep,"test_acc":best_te},
                                out_dir / "ckpts" / f"dd_{pct}_best.ckpt")
+                if best_state is not None:
+                    # load best weights
+                    model.load_state_dict(best_state[0])
+                    head2.load_state_dict(best_state[1])
+                    model.eval(); head2.eval()
+
+                    E_tr_dd, L_tr_dd = collect_embeddings(vae, model, head2, train_loader, device, vae_dtype, args.max_tsne_train)
+                    E_te_dd, L_te_dd = collect_embeddings(vae, model, head2, test_loader, device, vae_dtype, args.max_tsne_test)
+
+                    plot_tsne(E_tr_dd, L_tr_dd,out_dir / "plots" / f"tsne_train_dd_{pct}.png", f"t-SNE Train DD {pct}%")
+                    plot_tsne(E_te_dd, L_te_dd,out_dir / "plots" / f"tsne_test_dd_{pct}.png", f"t-SNE Test DD {pct}%")
 
                 print(f"[DD/{args.dd_method}:{sup}] pct={pct}% kept={len(keep_idx)} epochs={dd_epochs} | BEST {best_te:.4f} (ep {best_ep})")
                 summary_csv  = out_dir / "logs" / f"summary_{pct}.csv"

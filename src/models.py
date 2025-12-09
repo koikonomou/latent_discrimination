@@ -13,6 +13,67 @@ from huggingface_hub import snapshot_download
 # This param is used in Stable Diffusion to normalize latent vectors
 VAE_SCALE = 0.18215
 
+class ResNet18LatentEmbedder(nn.Module):
+    """
+    Use a ResNet18-style backbone on VAE latents (B,4,H,W) and output a proj_dim embedding.
+
+    - Input:  z (B,4,H,W)  e.g. (B,4,8,8) from SD-VAE
+    - Output: (B, proj_dim)
+    """
+    def __init__(self, proj_dim=128, pretrained=False):
+        super().__init__()
+        # base ResNet18
+        base = tv_models.resnet18(weights=None if not pretrained else tv_models.ResNet18_Weights.IMAGENET1K_V1)
+
+        # Adapt first conv from 3→4 channels
+        old_conv = base.conv1
+        self.conv1 = nn.Conv2d(
+            in_channels=4,
+            out_channels=old_conv.out_channels,
+            kernel_size=old_conv.kernel_size,
+            stride=old_conv.stride,
+            padding=old_conv.padding,
+            bias=old_conv.bias is not None
+        )
+        if pretrained:
+            # Copy weights for first 3 channels, init 4th as mean of them
+            with torch.no_grad():
+                self.conv1.weight[:, :3] = old_conv.weight
+                self.conv1.weight[:, 3:4] = old_conv.weight.mean(dim=1, keepdim=True)
+        else:
+            nn.init.kaiming_normal_(self.conv1.weight, mode="fan_out", nonlinearity="relu")
+            if self.conv1.bias is not None:
+                nn.init.zeros_(self.conv1.bias)
+
+        # Reuse the rest of ResNet18
+        self.bn1 = base.bn1
+        self.relu = base.relu
+        self.maxpool = base.maxpool
+        self.layer1 = base.layer1
+        self.layer2 = base.layer2
+        self.layer3 = base.layer3
+        self.layer4 = base.layer4
+        self.avgpool = base.avgpool  # GlobalAvgPool → (B, 512, 1, 1)
+
+        # Replace classifier with embedding head
+        self.fc = nn.Linear(512, proj_dim)
+
+    def forward(self, z):
+        # z: (B,4,H,W) from VAE
+        x = self.conv1(z)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)              # (B,512,1,1)
+        x = torch.flatten(x, 1)          # (B,512)
+        x = self.fc(x)                   # (B,proj_dim)
+        return x
 
 class ImageToLatentAdapter(nn.Module):
     """

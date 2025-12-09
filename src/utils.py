@@ -1,4 +1,4 @@
-import os, json, time, math, argparse, datetime, hashlib
+import os, re, json, time, math, argparse, datetime, hashlib
 from pathlib import Path
 import numpy as np
 import torch
@@ -46,20 +46,40 @@ def prepare_run_dir(run_id: str) -> Path:
     (out / "logs").mkdir(parents=True, exist_ok=True)
     return out
 
+
+
 def make_plain_id(args: argparse.Namespace) -> str:
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    name, extension = os.path.splitext(args.subset_file)
-    if extension.lower() == '.txt':
-        num = name[-2:]
-    else:
-        return "ERROR in subset filename: Not a .txt file or format is incorrect"
-    parts = [
-        ts,
-        f"dataset={args.dataset}",
-        f"DD={num}",
-    ]
+    parts = [ts]
+
     if args.run_name:
-        parts.insert(1, args.run_name)
+        parts.append(args.run_name)
+
+    parts.append(f"dataset={args.dataset}")
+
+    # Case 1: explicit subset file
+    if args.subset_file:
+        base = os.path.basename(args.subset_file)
+        name, ext = os.path.splitext(base)
+        if ext.lower() != ".txt":
+            raise ValueError(f"--subset-file must be a .txt file, got: {args.subset_file}")
+
+        # try to pull trailing digits as subset id, e.g. keep_idx_10 -> '10'
+        m = re.search(r"(\d+)$", name)
+        if m:
+            num = m.group(1)
+        else:
+            num = "custom"
+
+        parts.append(f"DD={num}")
+
+    elif args.distill and args.keep_pct < 100.0:
+        parts.append(f"DD={int(args.keep_pct)}")
+
+    # Case 3: full dataset
+    else:
+        parts.append(f"DD=full")
+
     return "_".join(parts)
 
 def prepare_plain_dir(run_id: str) -> Path:
@@ -79,8 +99,10 @@ class Stopwatch:
     def stop(self): self.acc += max(0.0, time.time()-self.t0); self.t0=None
 
 class UpdateCounter:
-    def __init__(self): self.steps=0
-    def add(self, n): self.steps += int(n)
+    def __init__(self):
+        self.steps = 0
+    def step(self, n=1):
+        self.steps += int(n)
 
 def epochs_for_fraction(base_epochs, keep_frac, mode="scaled"):
     if mode == "fixed":

@@ -53,7 +53,7 @@ def train_plain_epoch(model, opt, loader, device):
 def parse_args():
     p = argparse.ArgumentParser("Train plain CNNs on distilled subsets (no VAE, no HASeparator).")
     p.add_argument("--dataset", type=str, default="cifar10", choices=["mnist","cifar10","custom"])
-    p.add_argument("--image-size", type=int, default=64)
+    p.add_argument("--image-size", type=int, default=32)
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--device", type=str, default="cuda", choices=["auto","cuda","cpu"])
@@ -61,7 +61,7 @@ def parse_args():
 
     # model
     p.add_argument("--proj-dim", type=int, default=256)
-    p.add_argument("--arch", type=str, default="covn", choices=["conv","mlp","raw","simple","tiny"], help="mlp=SDVAE_Embedder, conv=LatentConvEmbedder, raw=flatten, simple=SIMPLE_Embedder, tiny=TinyLatentEmbedder")
+    p.add_argument("--arch", type=str, default="conv", choices=["conv","mlp","raw","simple","tiny"], help="mlp=SDVAE_Embedder, conv=LatentConvEmbedder, raw=flatten, simple=SIMPLE_Embedder, tiny=TinyLatentEmbedder")
     p.add_argument("--keep-pct", type=float, default=100.0, help="Randomly keep this percentage of the training set (e.g., 10, 20, ... 90), 100.0 means use full dataset.")
     p.add_argument("--distill", action="store_true" )
     # opt
@@ -90,6 +90,7 @@ def main():
     out_dir = prepare_plain_dir(run_id)
     (out_dir / "ckpts").mkdir(parents=True, exist_ok=True)
     (out_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (out_dir / "subsets").mkdir(parents=True, exist_ok=True)
     save_json(vars(args), out_dir / "config.json")
 
     # loaders
@@ -126,9 +127,9 @@ def main():
                 batch_size=args.batch_size,
                 shuffle=True,
                 num_workers=args.num_workers,
-                pin_memory=pin,
+                pin_memory=device,
             )
-            subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
+            subset_file = out_dir / "subsets" / f"keep_idx_{int(args.keep_pct)}.txt"
             np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
             print(
                 f"Using random subset with keep-pct={args.keep_pct:.1f}%: "
