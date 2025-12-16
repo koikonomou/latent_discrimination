@@ -22,7 +22,7 @@ def collect_embeddings(vae, embedder, head, loader, device="cuda:0", vae_dtype=T
     return T.cat(E).numpy(), T.cat(L).numpy()
 
 @T.no_grad()
-def collect(ldr, maxn, embedder, head, device="cuda:0"):
+def collect(ldr, vae, maxn, embedder, head, device="cuda:0"):
     E=[]; L=[];
     embedder.eval(); head.eval()
     seen=0
