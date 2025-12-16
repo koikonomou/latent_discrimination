@@ -3,9 +3,10 @@ from pathlib import Path
 import numpy as np
 import torch as T
 import random
+from .models import encode_to_latent
 
 @T.no_grad()
-def collect_embeddings(vae, embedder, head, loader, device, vae_dtype, maxn=None):
+def collect_embeddings(vae, embedder, head, loader, device="cuda:0", vae_dtype=T.float16, maxn=None):
     E, L = [], []
     embedder.eval(); head.eval()
     seen = 0
@@ -21,7 +22,7 @@ def collect_embeddings(vae, embedder, head, loader, device, vae_dtype, maxn=None
     return T.cat(E).numpy(), T.cat(L).numpy()
 
 @T.no_grad()
-def collect(ldr, maxn):
+def collect(ldr, maxn, embedder, head, device="cuda:0"):
     E=[]; L=[];
     embedder.eval(); head.eval()
     seen=0

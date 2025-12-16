@@ -165,8 +165,8 @@ def main():
         pass
 
 
-    E_tr, L_tr = collect(train_loader, args.max_tsne_train)
-    E_te, L_te = collect(test_loader,  args.max_tsne_test)
+    E_tr, L_tr = collect(train_loader, args.max_tsne_train, embedder, head, device=device)
+    E_t, L_te = collect(test_loader,  args.max_tsne_test, embedder, head, device=device)
     plot_tsne(E_tr, L_tr, out_dir / "plots" / "tsne_train.png", "t-SNE Train")
     plot_tsne(E_te, L_te, out_dir / "plots" / "tsne_test.png", "t-SNE Test")
     sil, intra, margin = embedding_metrics(E_te, L_te)
