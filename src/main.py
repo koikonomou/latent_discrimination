@@ -6,7 +6,7 @@ from pathlib import Path
 import torch as T
 from torchinfo import summary
 from torch.utils.data import DataLoader
-from .utils import set_seed, resolve_device, make_run_id, prepare_run_dir, save_json, Stopwatch, UpdateCounter, epochs_for_fraction
+from .utils import set_seed, resolve_device, make_run_id, prepare_run_dir, save_json, Stopwatch, UpdateCounter, epochs_for_fraction, collect_embeddings, collect
 from .data import get_loaders
 from .models import load_vae, SDVAE_Embedder, HASeparator, LatentConvEmbedder, SIMPLE_Embedder, TinyLatentEmbedder, ResNet18LatentEmbedder
 from .train import train_epoch, eval_epoch
@@ -18,21 +18,6 @@ from .train import eval_epoch
 from .models import encode_to_latent
 from .data_custom import get_custom_loaders
 
-@T.no_grad()
-def collect_embeddings(vae, embedder, head, loader, device, vae_dtype, maxn=None):
-    E, L = [], []
-    embedder.eval(); head.eval()
-    seen = 0
-    for xb, yb in loader:
-        xb, yb = xb.to(device), yb.to(device)
-        z = encode_to_latent(vae, xb, device, vae_dtype)   # (B,4,8,8)
-        feat = embedder(z)                                 # (B, proj_dim)
-        _, emb, _ = head(feat, labels=None)                # normalized features
-        E.append(emb.cpu()); L.append(yb.cpu())
-        seen += yb.size(0)
-        if maxn and seen >= maxn:
-            break
-    return T.cat(E).numpy(), T.cat(L).numpy()
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -61,15 +46,15 @@ def parse_args():
     p.add_argument("--run-distill", action="store_true")
     p.add_argument("--dd-method", type=str, default="kcenter_cosine", choices=["kmeans_euclid","kcenter_cosine","margin_mix","select_random"])
     p.add_argument("--dd-criterion", type=str, default="nearest", choices=["nearest","furthest","random"])
-    p.add_argument("--no-percentage", action="store_false", dest="percentage", help="Use absolute numbers instead of percentage")
+
     p.add_argument("--dd-k", type=int, default=10)
     p.add_argument("--epochs-per-dd", type=int, default=10)
-    # if you want fixed epoch training for all DD set the following to "fixed"a
     p.add_argument("--dd-epoch-mode", type=str, default="scaled", choices=["scaled","fixed"])
     p.add_argument("--hard-fraction", type=float, default=0.5)
     p.add_argument("--dd-supervision", type=str, default="groundtruth", choices=["groundtruth","pseudo","unsupervised"], help="unsupervised is for class agnostic approach ") 
-
+    p.add_argument("--oreset-value", type=str, default="percentage", choices=["percentage","absolute_value"])
     p.add_argument("--run-name", type=str, default="")
+    p.add_argument("--train-coreset", action="store_true", default=False, help="If set, enables coreset selection training")
     p.add_argument("--skip-train", action="store_true")
     p.add_argument("--load-ckpt", type=str, default="")
     p.add_argument("--embedder", type=str, default="conv", choices=["conv","mlp","raw","simple", "tiny","resnet"],help="mlp = SDVAE_Embedder , conv = LatentConvEmbedder, raw = Latent space")
@@ -103,8 +88,8 @@ def main():
 
 
     vae_dtype = T.float16 #if (args.device=="auto" and args.vae=="sd15") else T.float32
-    # repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
-    #TODO: FIX THIS
+    repo = args.sd15_path if args.vae=="sd15" else args.taesd_path
+#    #TODO: FIX THIS
     if args.vae=="sd15" :
         repo = args.sd15_path
     elif args.vae=="taesd":
@@ -180,21 +165,6 @@ def main():
         pass
 
 
-    @T.no_grad()
-    def collect(ldr, maxn):
-        E=[]; L=[];
-        embedder.eval(); head.eval()
-        seen=0
-        for xb,yb in ldr:
-            xb=xb.to(device)
-            z=encode_to_latent(vae, xb, device, vae_dtype)
-            feat=embedder(z)
-            _, emb, _ = head(feat, labels=None)
-            E.append(emb.cpu()); L.append(yb)
-            seen += yb.size(0)
-            if maxn and seen>=maxn: break
-        return T.cat(E).numpy(), T.cat(L).numpy()
-
     E_tr, L_tr = collect(train_loader, args.max_tsne_train)
     E_te, L_te = collect(test_loader,  args.max_tsne_test)
     plot_tsne(E_tr, L_tr, out_dir / "plots" / "tsne_train.png", "t-SNE Train")
@@ -208,35 +178,30 @@ def main():
         # collect cosine features + logits (for kcenter/margin_mix)
         
         E_all=L_all=IDX_all=LOG_all=None
-        if args.dd_method in ["kcenter_cosine","margin_mix","select_random"]:
-            E_all, Y_all, IDX_all, LOG_all = collect_embed_and_logits(vae, embedder, head, train_loader_noshuf, device, vae_dtype)
+        E_all, Y_all, IDX_all, LOG_all = collect_embed_and_logits(vae, embedder, head, train_loader_noshuf, device, vae_dtype)
 
-        # CSV
-        dd_csv = out_dir / "dd_curve.csv"
-        with open(dd_csv, "w", newline="") as f:
-            w = csv.writer(f); w.writerow(["pct","method","supervision","kept","epochs","best_epoch","best_test_acc","wall_sec","updates"])
 
-            # schedule = [10,20,30,40,50,60,70,80,90]
-            if args.percentage:
-                schedule = [10,20,30,40,50,60,70,80,90]
-            else :
-                schedule= [10,50]
-            for pct in schedule:
-                # choose keep_idx
-                sup = args.dd_supervision
-                if args.dd_method == "kmeans_euclid":
-                    throw_embed = SDVAE_Embedder(args.proj_dim, base_dim).to(device)
-                    F_all, YY, IDX = collect_vae_features(vae, throw_embed, train_loader_noshuf, device, vae_dtype)
-                    _, d2 = kmeans_assign_dist_whiten(F_all, k=args.dd_k, seed=args.seed)
-                    keep_idx = make_distilled_indices_balanced(IDX, d2, YY, pct, args.dd_criterion, seed=args.seed, num_classes=args.num_classes)
-                elif args.dd_method == "kcenter_cosine":
-                    keep_idx = select_kcenter_cosine_balanced(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes, seed=args.seed)
-                elif args.dd_method == "select_random":
-                    keep_idx = select_random(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes,seed=args.seed)
+        # schedule = [10,20,30,40,50,60,70,80,90]
+        percentage = [0.1,0.5,1.0,5.0,10,20,30,40,50,60,70,80,90]
+        absolute_values= [10,50]
 
-                subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
-                np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
+        if args.coreset_value == "percentage":
+            schedule_list = percentages 
+            is_prercentage = True
+        else:
+            scedule_list = absolute_values
+            is_percentage = False
+        print(f"Running schedule with:{scedule_list}")
+        for pct in schedule_list: 
+            if args.dd_method == "kcenter_cosine":
+                keep_idx = select_kcenter_cosine_balanced(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes, seed=args.seed)
+            elif args.dd_method == "select_random":
+                keep_idx = select_random(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes,seed=args.seed)
 
+            subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
+            np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
+            if args.train_coreset:
+                print("Coreset training enabled!")
                 if args.embedder == "conv":
                     model = LatentConvEmbedder(proj_dim=max(args.proj_dim, 256)).to(device)
                     dd_proj_dim = max(args.proj_dim, 256)
@@ -277,10 +242,12 @@ def main():
 
                 t.stop()
                 save_json({
+                    "coreset": pct,
+                    "dataset": args.dataset,
                     "best_test_acc": float(best_te),
                     "best_epoch": int(best_ep),
                     "wall_sec": t.acc
-                }, out_dir / "logs" / f"timing_{pct}.json")
+                }, out_dir / "logs" / f"results_{pct}.json")
                 save_json(vars(args), out_dir / "logs" / f"config_{pct}.json")
                 if best_state:
                     T.save({"embedder":best_state[0],"head":best_state[1],"epoch":best_ep,"test_acc":best_te},

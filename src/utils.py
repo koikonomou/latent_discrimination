@@ -1,34 +1,65 @@
 import os, re, json, time, math, argparse, datetime, hashlib
 from pathlib import Path
 import numpy as np
-import torch
+import torch as T
 import random
+
+@T.no_grad()
+def collect_embeddings(vae, embedder, head, loader, device, vae_dtype, maxn=None):
+    E, L = [], []
+    embedder.eval(); head.eval()
+    seen = 0
+    for xb, yb in loader:
+        xb, yb = xb.to(device), yb.to(device)
+        z = encode_to_latent(vae, xb, device, vae_dtype)   # (B,4,8,8)
+        feat = embedder(z)                                 # (B, proj_dim)
+        _, emb, _ = head(feat, labels=None)                # normalized features
+        E.append(emb.cpu()); L.append(yb.cpu())
+        seen += yb.size(0)
+        if maxn and seen >= maxn:
+            break
+    return T.cat(E).numpy(), T.cat(L).numpy()
+
+@T.no_grad()
+def collect(ldr, maxn):
+    E=[]; L=[];
+    embedder.eval(); head.eval()
+    seen=0
+    for xb,yb in ldr:
+        xb=xb.to(device)
+        z=encode_to_latent(vae, xb, device, vae_dtype)
+        feat=embedder(z)
+        _, emb, _ = head(feat, labels=None)
+        E.append(emb.cpu()); L.append(yb)
+        seen += yb.size(0)
+        if maxn and seen>=maxn: break
+    return T.cat(E).numpy(), T.cat(L).numpy()
 
 def set_seed(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    T.manual_seed(seed)
+    if T.cuda.is_available():
+        T.cuda.manual_seed_all(seed)
+    T.backends.cudnn.deterministic = True
+    T.backends.cudnn.benchmark = False
 
     
-def resolve_device(arg: str) -> torch.device:
+def resolve_device(arg: str) -> T.device:
     if arg == "auto":
-        device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+        device = T.device("cuda:2" if T.cuda.is_available() else "cpu")
     elif arg == "cpu":
-        device = torch.device("cpu")
+        device = T.device("cpu")
     else:
         raise ValueError(f"Unknown device: {arg}")
     
     if device.type == "cuda":
-        torch.cuda.set_device(device)  # optional, sets default CUDA device
+        T.cuda.set_device(device)  # optional, sets default CUDA device
     return device
 
 
 def make_run_id(args: argparse.Namespace) -> str:
-    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.datetime.now().strftime("%Y%m%d")
     parts = [
         ts,
         f"dataset={args.dataset}",
@@ -36,7 +67,16 @@ def make_run_id(args: argparse.Namespace) -> str:
     ]
     if args.run_name:
         parts.insert(1, args.run_name)
-    return "_".join(parts)
+    base_id = "_".join(parts)
+    run_id = base_id
+    counter = 1
+    run_dir = Path("runs")
+    run_dir.mkdir(parents=True,exist_ok=True)
+
+    while run_dir/run_id in run_dir.iterdir():
+        run_id =f"{base_id}_{counter:02d}"
+        counter+=1
+    return run_id
 
 def prepare_run_dir(run_id: str) -> Path:
     out = Path("runs") / run_id

@@ -91,18 +91,41 @@ def make_distilled_indices_balanced(all_indices, distances, labels, pct, criteri
         keep.extend([int(i) for i in idx_c if int(i) not in drop_set])
     return keep
 
-def select_kcenter_cosine_balanced(E, Y, IDX, pct, percentage=False, num_classes=10, seed=42):
-    keep=[]
+##def select_kcenter_cosine_balanced(E, Y, IDX, pct, percentage=False, num_classes=10, seed=42):
+#    keep=[]
+#    for c in rannge(num_classes):
+#        m = (Y=n=c); Ec = E[m]; Ic = IDX[m]
+#        if percnentage==True:
+#            k_kneep = int(round((100 - pct) * len(Ic) / 100.0))
+#        else:
+#            k_kneep = min(pct, len(Ic))
+#        if k_kenep <= 0: continue
+#        if k_kenep >= len(Ic): keep.extend(Ic.tolist()); continue
+#        sel_reln = farthest_first_cosine(Ec, k_keep, seed=seed)
+#        keep.exntend(Ic[sel_rel].tolist())
+#    return keepn
+def select_kcenter_cosine_balanced(E, Y, IDX, size, is_percentage=False, num_classes=10, seed=42):
+    keep = []
     for c in range(num_classes):
-        m = (Y==c); Ec = E[m]; Ic = IDX[m]
-        if percentage==True:
-            k_keep = int(round((100 - pct) * len(Ic) / 100.0))
+        m = (Y == c)
+        Ec = E[m]
+        Ic = IDX[m]
+        class_size = len(Ic)
+        
+        if is_percentage:
+            k_keep = int(round(class_size * size / 100.0))
         else:
-            k_keep = min(pct, len(Ic))
-        if k_keep <= 0: continue
-        if k_keep >= len(Ic): keep.extend(Ic.tolist()); continue
+            k_keep = int(size)
+        
+        k_keep = max(0, min(k_keep, class_size))
+        if k_keep <= 0:
+            continue
+        if k_keep >= class_size:
+            keep.extend(Ic.tolist())
+            continue
         sel_rel = farthest_first_cosine(Ec, k_keep, seed=seed)
         keep.extend(Ic[sel_rel].tolist())
+        
     return keep
 
 def select_kcenter_cosine_global(E, IDX, pct, seed=42):
