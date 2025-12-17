@@ -133,13 +133,13 @@ def select_kcenter_cosine_global(E, IDX, pct, seed=42):
     sel_rel = farthest_first_cosine(E, keep_total, seed=seed)
     return IDX[sel_rel].tolist()
 
-def select_random(E, Y, IDX, pct, percentage=False, num_classes=10, seed=42):
+def select_random(E, Y, IDX, pct, is_percentage=False, num_classes=10, seed=42):
     rng = np.random.default_rng(seed)
 
     keep = []
     for c in range(num_classes):
         m = (Y==c); Ec=E[m]; Ic = IDX[m]
-        if percentage==True:
+        if is_percentage==True:
             k_keep = int(round((100 - pct) * len(Ic) / 100.0))
         else:
             k_keep = min(pct, len(Ic))

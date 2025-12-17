@@ -46,13 +46,12 @@ def parse_args():
     p.add_argument("--run-distill", action="store_true")
     p.add_argument("--dd-method", type=str, default="kcenter_cosine", choices=["kmeans_euclid","kcenter_cosine","margin_mix","select_random"])
     p.add_argument("--dd-criterion", type=str, default="nearest", choices=["nearest","furthest","random"])
-
+    p.add_argument("--coreset-value", type=str, default="percentage",choices=["percentage","absolute"])
     p.add_argument("--dd-k", type=int, default=10)
     p.add_argument("--epochs-per-dd", type=int, default=10)
     p.add_argument("--dd-epoch-mode", type=str, default="scaled", choices=["scaled","fixed"])
     p.add_argument("--hard-fraction", type=float, default=0.5)
     p.add_argument("--dd-supervision", type=str, default="groundtruth", choices=["groundtruth","pseudo","unsupervised"], help="unsupervised is for class agnostic approach ") 
-    p.add_argument("--oreset-value", type=str, default="percentage", choices=["percentage","absolute_value"])
     p.add_argument("--run-name", type=str, default="")
     p.add_argument("--train-coreset", action="store_true", default=False, help="If set, enables coreset selection training")
     p.add_argument("--skip-train", action="store_true")
@@ -166,7 +165,7 @@ def main():
 
 
     E_tr, L_tr = collect(train_loader, vae, args.max_tsne_train, embedder, head, device=device, vae_dtype=vae_dtype)
-    E_t, L_te = collect(test_loader, vae, args.max_tsne_test, embedder, head, device=device, vae_dtype=vae_dtype)
+    E_te, L_te = collect(test_loader, vae, args.max_tsne_test, embedder, head, device=device, vae_dtype=vae_dtype)
     plot_tsne(E_tr, L_tr, out_dir / "plots" / "tsne_train.png", "t-SNE Train")
     plot_tsne(E_te, L_te, out_dir / "plots" / "tsne_test.png", "t-SNE Test")
     sil, intra, margin = embedding_metrics(E_te, L_te)
@@ -175,6 +174,7 @@ def main():
 
     # distillation
     if args.run_distill:
+
         # collect cosine features + logits (for kcenter/margin_mix)
         
         E_all=L_all=IDX_all=LOG_all=None
@@ -184,19 +184,20 @@ def main():
         # schedule = [10,20,30,40,50,60,70,80,90]
         percentage = [0.1,0.5,1.0,5.0,10,20,30,40,50,60,70,80,90]
         absolute_values= [10,50]
-
+        schedule_list = []
+        is_percentage = True
         if args.coreset_value == "percentage":
-            schedule_list = percentages 
+            schedule_list = percentage 
             is_prercentage = True
-        else:
+        elif args.coreset_value == "absolute":
             scedule_list = absolute_values
             is_percentage = False
-        print(f"Running schedule with:{scedule_list}")
+        print(f"Running schedule with:{args.coreset_value}")
         for pct in schedule_list: 
             if args.dd_method == "kcenter_cosine":
-                keep_idx = select_kcenter_cosine_balanced(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes, seed=args.seed)
+                keep_idx = select_kcenter_cosine_balanced(E_all, Y_all, IDX_all, pct, is_percentage, num_classes=args.num_classes, seed=args.seed)
             elif args.dd_method == "select_random":
-                keep_idx = select_random(E_all, Y_all, IDX_all, pct, percentage=args.percentage, num_classes=args.num_classes,seed=args.seed)
+                keep_idx = select_random(E_all, Y_all, IDX_all, pct, is_percentage, num_classes=args.num_classes,seed=args.seed)
 
             subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
             np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
