@@ -95,7 +95,7 @@ def main():
     coreset_size = 0
     coreset_file = [f for f in listdir(args.subset_folder) if isfile(join(args.subset_folder,f))]
     for c_file in coreset_file:
-        match = re.search(r"idx_(\d+)\.txt", c_file)
+        match = re.search(r"idx_(\d+\.?\d*)\.txt", c_file)
         full_subset_path = os.path.join(args.subset_folder, c_file)
         if match:
             coreset_size = match.group(1) 
@@ -216,6 +216,7 @@ def main():
             params_json_path.parent.mkdir(parents=True, exist_ok=True)
             save_json({
                     "arch": args.arch,
+                    "subset_folder": args.subset_folder, 
                     "dataset" : args.dataset,
                     "coreset": coreset_size,
                     "total_epochs": args.epochs,
