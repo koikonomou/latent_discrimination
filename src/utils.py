@@ -66,9 +66,10 @@ def make_run_id(args: argparse.Namespace) -> str:
         f"dataset_{args.dataset}",
         f"method_{args.dd_method}" if args.run_distill else "method_baseline",
     ]
-    if args.run_name:
-        parts.insert(1, args.run_name)
     base_id = "_".join(parts)
+    if args.run_name:
+        parts = args.run_name
+        base_id = parts
     run_id = base_id
     counter = 1
     run_dir = Path("runs")
