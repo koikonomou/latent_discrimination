@@ -63,8 +63,8 @@ def make_run_id(args: argparse.Namespace) -> str:
     ts = datetime.datetime.now().strftime("%Y%m%d")
     parts = [
         ts,
-        f"dataset={args.dataset}",
-        f"method={args.dd_method}" if args.run_distill else "method=baseline",
+        f"dataset_{args.dataset}",
+        f"method_{args.dd_method}" if args.run_distill else "method_baseline",
     ]
     if args.run_name:
         parts.insert(1, args.run_name)

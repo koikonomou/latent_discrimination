@@ -182,7 +182,7 @@ def main():
 
 
         # schedule = [10,20,30,40,50,60,70,80,90]
-        percentage = [0.1,0.5,1.0,5.0,10,20,30,40,50,60,70,80,90]
+        percentage = [0.1,0.5,1,5,10,20,30,40,50,60,70,80,90]
         absolute_values= [10,50]
         schedule_list = []
         is_percentage = True
@@ -198,7 +198,6 @@ def main():
                 keep_idx = select_kcenter_cosine_balanced(E_all, Y_all, IDX_all, pct, is_percentage, num_classes=args.num_classes, seed=args.seed)
             elif args.dd_method == "select_random":
                 keep_idx = select_random(E_all, Y_all, IDX_all, pct, is_percentage, num_classes=args.num_classes,seed=args.seed)
-
             subset_file = out_dir / "subsets" / f"keep_idx_{pct}.txt"
             np.savetxt(subset_file, np.array(keep_idx, dtype=np.int64), fmt="%d")
             if args.train_coreset:
