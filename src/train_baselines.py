@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 import torchvision as tv
-import random, torch
+import random
 from .utils import save_json
 from .model_baselines import create_model
 from os import listdir
@@ -95,7 +95,7 @@ def main():
     coreset_size = 0
     coreset_file = [f for f in listdir(args.subset_folder) if isfile(join(args.subset_folder,f))]
     for c_file in coreset_file:
-        match = re.search(r"idx_(\d+\.?\d*)\.txt", c_file)
+        match = re.search(r"keep_idx_(\d+\.?\d*)\.txt", c_file)
         full_subset_path = os.path.join(args.subset_folder, c_file)
         if match:
             coreset_size = match.group(1) 

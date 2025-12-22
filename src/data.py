@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms, datasets
 from sklearn.datasets import fetch_openml
 from .utils import resolve_device
-
+import copy
 
 
 TINY_IMAGENET_URL = "http://cs231n.stanford.edu/tiny-imagenet-200.zip"
@@ -189,9 +189,10 @@ def get_loaders(dataset: str, image_size: int, batch_size: int, num_workers: int
 
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
-    
+    train_ds_selection = copy.copy(train_ds)
+    train_ds_selection.transform = tf_test
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin)
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
-    train_loader_noshuf = DataLoader(train_ds, batch_size=256, shuffle=False,num_workers=0, pin_memory=pin)
+    train_loader_noshuf = DataLoader(train_ds_selection, batch_size=256, shuffle=False,num_workers=0, pin_memory=pin)
     
     return train_ds, test_ds, train_loader, test_loader, train_loader_noshuf

@@ -221,7 +221,7 @@ def main():
 
                 sub_ds = T.utils.data.Subset(train_ds, keep_idx)
                 sub_loader = T.utils.data.DataLoader(sub_ds, batch_size=args.batch_size, shuffle=True,
-                                                         num_workers=args.num_workers, pin_memory=(device))
+                                                         num_workers=args.num_workers, pin_memory=(device.type=="cuda"))
 
                 keep_frac = len(keep_idx)/len(train_ds)
                 dd_epochs = epochs_for_fraction(args.epochs_per_dd, keep_frac, mode=args.dd_epoch_mode)
@@ -263,7 +263,7 @@ def main():
 
                     plot_tsne(E_tr_dd, L_tr_dd,out_dir / "plots" / f"tsne_train_dd_{pct}.png", f"t-SNE Train DD {pct}%")
                     plot_tsne(E_te_dd, L_te_dd,out_dir / "plots" / f"tsne_test_dd_{pct}.png", f"t-SNE Test DD {pct}%")
-
+                sup= args.dd_supervision
                 print(f"[DD/{args.dd_method}:{sup}] pct={pct}% kept={len(keep_idx)} epochs={dd_epochs} | BEST {best_te:.4f} (ep {best_ep})")
                 summary_csv  = out_dir / "logs" / f"summary_{pct}.csv"
                 with open(summary_csv, "w", newline="") as f_summary:
