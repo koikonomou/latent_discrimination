@@ -44,4 +44,15 @@ python -m src.main --dataset mnist --vae sd15 --embedder mlp --proj-dim 128 --ep
 The --dd-epoch-mode offers the option to train the distilled dataset for the same lr and epochs as the baseline model with the arg {fixed} or at a scaled factor based on the distillation percentage with the arg {scaled}
 
 
+The bash script train.sh runs the main training and evaluation for the cifar10 dataset.
+Run:
+```bash
+chmod +x train.sh
+./train.sh
+```
+To print all the results with mean and std run from the parent folder:
+```bash
+poetry run python print_results.py 
+```
+
 
